@@ -1,0 +1,28 @@
+# Environment for Tree-Ring and Gaussian Shading (generate.py and score.py with
+# --method tree_ring or --method gaussian_shading). The pinned upstream commits import APIs that
+# only exist in this old stack (for example transformers.CLIPFeatureExtractor and the diffusers
+# 0.11.1 schedulers), so do not upgrade it. torch 1.13 wheels support GPUs up to compute
+# capability 8.6; newer cards run through PTX JIT and are not recommended.
+# Create with: conda env create -f environment-tree-gaussian.yml
+name: baselines-tree-gaussian
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy<2
+  - pillow
+  - scipy
+  - scikit-learn
+  - pyyaml
+  - pip:
+      - --extra-index-url https://download.pytorch.org/whl/cu117
+      - torch==1.13.1+cu117
+      - torchvision==0.14.1+cu117
+      - diffusers==0.11.1
+      - transformers==4.25.1
+      - huggingface_hub<0.20
+      - datasets
+      - ftfy
+      - accelerate
+      - pycryptodome

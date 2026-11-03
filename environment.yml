@@ -1,0 +1,29 @@
+# Main environment: our method, the semantic encoder, quality metrics and the
+# encoder studies. The native baselines need their own environments; see
+# experiments/baselines/README.md.
+name: semantic-watermark
+channels:
+  - conda-forge
+dependencies:
+  - python=3.11
+  - pip
+  - pip:
+      - torch==2.11.0
+      - torchvision==0.26.0
+      - diffusers @ git+https://github.com/huggingface/diffusers.git@90b4e34e79a86ec5e7f2437634fe95ecd2108796
+      - transformers==5.13.0
+      - accelerate==1.14.0
+      - peft==0.20.0
+      - safetensors==0.8.0
+      - huggingface_hub==1.23.0
+      - open_clip_torch==3.3.0
+      - timm==1.0.27
+      - numpy==2.4.4
+      - scipy==1.17.1
+      - pillow==12.2.0
+      - pyyaml==6.0.3
+      - matplotlib==3.11.0
+      - pytorch-fid==0.3.0
+      - tpips
+      - pytest
+      - -e .

@@ -1,0 +1,37 @@
+# Detector settings shared by every experiment. watermark/config.py is the only
+# reader; no experiment hard-codes N, M, activation, radius, FPR targets, fold
+# counts or frame/key counts.
+prf: hmac-sha256
+
+# The paper's selected settings, one per (N, M).
+configs:
+  - {N: 8,  M: 4,  activation: 0.10, radius: 1}
+  - {N: 16, M: 8,  activation: 0.50, radius: 1}
+  - {N: 32, M: 12, activation: 0.75, radius: 1}
+
+# Boundary threshold delta is calibrated per hyperplane frame so that this
+# fraction of clean watermarked images lies within delta of at least one of the
+# M hyperplanes.
+activation_population: clean_watermarked
+
+# Score threshold tau is frozen on clean images only. Delta is cross-fitted over
+# `folds` interleaved folds of the evaluation prompts.
+calibration: {population: clean, folds: 5, fpr_targets: [0.01, 0.05, 0.20]}
+
+# 5 hyperplane frames x 5 PRF keys. Frame f uses seed frame_seed_base + f and id
+# "frame-0f". Key t is derive_trial_key(master_key, t): trial 0 is the master key
+# itself, trials 1.. are HMAC-derived. The 32-byte master key is supplied by the
+# user (see watermark.prf.generate_master_key); it is never committed.
+replication: {frames: 5, keys: 5, frame_seed_base: 2026090200}
+
+# Images per detection set; set scores are aggregated by their mean.
+set_sizes: [1, 5, 10]
+aggregation: mean
+
+exceptions:
+  # GPT Image panel: exact-code detection, five hash functions and five keys,
+  # B=5 groups formed by a deterministic prompt partition.
+  closed_api: {N: 8, M: 8, radius: 0, set_sizes: [1, 5], grouping_seed: 20260923}
+  # CSD / depth encoders: the score threshold is calibrated on the same clean
+  # images that are evaluated.
+  style_depth: {N: 16, M: 8, activation: 0.50, radius: 1, calibration_population: evaluation}

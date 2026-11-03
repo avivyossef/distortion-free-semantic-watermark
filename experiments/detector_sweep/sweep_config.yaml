@@ -1,0 +1,6 @@
+# Grid of the detector-setting sweep (paper, Appendix "Detection settings"): the boundary
+# threshold delta is set by a clean-activation target, the Hamming radius by r. N, M, the FPR
+# targets, the folds and the replicates come from configs/detection.yaml. The point
+# (activation 0, radius 0) is exact-code detection, the reference of the sweep.
+activation_targets: [0.0, 0.025, 0.05, 0.10, 0.20, 0.35, 0.50, 0.75, 1.0]
+radii: [0, 1, 2]

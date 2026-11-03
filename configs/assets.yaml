@@ -1,0 +1,64 @@
+# External assets, bound by SHA-256 or by an immutable Hugging Face revision.
+# Weights and data are never committed; scripts/download_checkpoint.py fetches
+# the encoder checkpoint and verifies it.
+checkpoint:
+  file: checkpoint-step-00019840.pt
+  url: https://huggingface.co/avivyossef/semantic-entropy-encoder/resolve/84a901426f775e8f1f4e703b13b9caafde7ecde6/checkpoint-step-00019840.pt
+  sha256: 5e252aa4af18e90bb93c65e6dee80e98070ceea8523e777f0b0dee6b6d41c614
+
+# The 1,000 COCO-2017 validation captions of the paper's SD2.1 corpus, one JSONL row per
+# prompt: {"prompt_uid", "text", "native_key_id"}. Captions are COCO annotations (CC BY 4.0).
+prompts:
+  file: coco2017-val-1000.jsonl
+  url: https://huggingface.co/avivyossef/semantic-entropy-encoder/resolve/84a901426f775e8f1f4e703b13b9caafde7ecde6/prompts/coco2017-val-1000.jsonl
+  sha256: 179fe18b0cd3eb1a9b6a94f9282e86efbf7e704a96f051e64ebd960952d4e220
+
+# Pretrained models, loaded from the Hugging Face Hub at a pinned revision.
+models:
+  dinov2_base:
+    repo: facebook/dinov2-base
+    revision: f9e44c814b77203eaa57a6bdbbd535f21ede1415
+  clip_vit_b32:
+    repo: openai/clip-vit-base-patch32
+    revision: 3d74acf9a28c67741b2f4f2ea7635f0aaf6f0268
+  dinov3_l16:
+    repo: facebook/dinov3-vitl16-pretrain-lvd1689m
+    revision: ea8dc2863c51be0a264bab82070e3e8836b02d51
+  csd_vit_l:
+    repo: tomg-group-umd/CSD-ViT-L
+    revision: 5bc26a6fb0487f3f00a2a7313135103a005b1b67
+    file: pytorch_model.bin
+  depth_anything_v2_small:
+    repo: depth-anything/Depth-Anything-V2-Small-hf
+    revision: 5426e4f0f36572d16453bbda7a8389317b1bef99
+  tpips_embed:
+    repo: sywang/TPIPS-Embed-Qwen3VL-8B
+    revision: 86a1493c60121e656a1c075bc7aed88f25fcd4d4
+  sdxl:
+    repo: stabilityai/stable-diffusion-xl-base-1.0
+    revision: 462165984030d82259a11f4367a4eed129e94a7b
+  sd21:
+    repo: sd2-community/stable-diffusion-2-1-base
+    revision: 4e63672c03103b6c636b8fb4119ba982469b2955
+    unet_sha256: a434f8fdbb51f080ac57a4377281241467c4efc1417b27646ffae989644de60c
+  openclip_vit_g14:                  # OpenCLIP ViT-g-14, laion2b_s34b_b88k weights
+    model: ViT-g-14
+    repo: laion/CLIP-ViT-g-14-laion2B-s34B-b88K
+    revision: a20bc450485fc2dd335317234582df0e69d21b5a
+    file: open_clip_model.safetensors
+    sha256: 0b890e533656dbadbf30b0f4f62a053b51185622ecb7e2c7e2c6232cd95d438a
+  qwen3_vl_planner:
+    repo: Qwen/Qwen3-VL-8B-Instruct
+    revision: 0c351dd01ed87e9c1b53cbc748cba10e6187ff3b
+  qwen_image_edit:
+    repo: Qwen/Qwen-Image-Edit
+    revision: ac7f9318f633fc4b5778c59367c8128225f1e3de
+  instruct_pix2pix:
+    repo: timbrooks/instruct-pix2pix
+    revision: 31519b5cb02a7fd89b906d88731cd4d6a7bbf88d
+  flux2_klein_distilled:
+    repo: black-forest-labs/FLUX.2-klein-4B
+    revision: e7b7dc27f91deacad38e78976d1f2b499d76a294
+  flux2_klein_base:
+    repo: black-forest-labs/FLUX.2-klein-base-4B
+    revision: a3b4f4849157f664bdbc776fd7453c2783562f4d

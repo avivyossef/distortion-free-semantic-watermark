@@ -1,0 +1,26 @@
+# Environment for SEAL (generate.py and score.py with --method seal).
+# Create with: conda env create -f environment-seal.yml
+name: baselines-seal
+channels:
+  - conda-forge
+dependencies:
+  - python=3.10
+  - pip
+  - numpy<2
+  - pillow
+  - scipy
+  - scikit-learn
+  - pyyaml
+  - pip:
+      - torch==2.5.1
+      - torchvision==0.20.1
+      - diffusers==0.20.2
+      - transformers==4.47.1
+      - sentence-transformers==3.3.1
+      - huggingface_hub==0.25.0
+      - accelerate==1.2.1
+      - safetensors
+      - sentencepiece
+      - protobuf
+      - datasets
+      - ftfy
