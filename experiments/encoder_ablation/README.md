@@ -6,7 +6,9 @@ our encoder, DINOv2-base, CLIP ViT-B/32, DINOv3-L/16 and TPIPS-Embed on the same
 images, B = 1, every configuration of `configs/detection.yaml`, mean ROC curves over five
 hyperplane frames x five PRF keys (25 replicates per encoder and configuration). Each encoder
 uses normalized embeddings in its native dimension; the detector settings are the
-configuration-specific ones of the main clean-detection experiment.
+configuration-specific ones of the main clean-detection experiment. Candidates are selected by
+Gumbel selection with the selector stream of the edit experiments (bare prompt identity), as in the
+paper's ablation.
 
 ## Prerequisites
 

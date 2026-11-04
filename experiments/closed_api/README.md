@@ -1,6 +1,6 @@
 # GPT Image as a closed-API generator (Appendix "Closed-API Black-Box Generator Access")
 
-Applies the watermark to OpenAI's GPT Image API using sampling access only: per prompt, eight
+Applies the watermark (Gumbel selection) to OpenAI's GPT Image API using sampling access only: per prompt, eight
 independently requested candidates and one independently requested clean control (low quality,
 1024 x 1024). Detection is exact-code (Hamming radius 0) at M = 8 over five hyperplane frames and
 five keys; for B = 5 the 50 prompts are split into ten fixed groups of five (identical

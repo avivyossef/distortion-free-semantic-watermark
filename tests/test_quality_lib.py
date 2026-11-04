@@ -10,9 +10,9 @@ QUALITY = Path(__file__).resolve().parents[1] / "experiments" / "quality"
 sys.path.insert(0, str(QUALITY))
 
 import _quality_lib as lib  # noqa: E402
-from watermark.coding import sample_hyperplanes  # noqa: E402
-from watermark.detection import replicate_scores  # noqa: E402
-from watermark.prf import derive_trial_key  # noqa: E402
+from watermark.coding import bits_to_code_ids, sample_hyperplanes  # noqa: E402
+from watermark.prf import derive_trial_key, score_table  # noqa: E402
+from watermark.selection import cell_rng, select_code_ids  # noqa: E402
 
 KEY = bytes(range(32))
 
@@ -29,16 +29,21 @@ def _pools(prompts=20, slots=3, n=16, dim=12, seed=0):
     return candidates, cleans, ["p%02d" % i for i in range(prompts)]
 
 
-def test_selection_equals_the_replicate_selector_of_the_detection_pipeline():
-    candidates, cleans, uids = _pools()
+def test_selection_is_gumbel_selection_on_the_quality_stream():
+    candidates, _, uids = _pools()
     planes = sample_hyperplanes(7, 12)
     positions = lib.select_positions(candidates, planes, KEY, frame_id="frame-00", key_trial=2, n=16, m=8,
                                      prompt_uids=uids)
     assert positions.shape == (20, 3) and positions.min() >= 1 and positions.max() <= 16
+    table = score_table(KEY, 8)
     for slot in range(3):
-        replicate = replicate_scores(candidates[:, slot], cleans[:, slot], uids, planes, KEY, frame_id="frame-00",
-                                     key_trial=2, n=16, m=8, activation=0.5, radius=1, folds=5, slot=slot + 1)
-        assert np.array_equal(positions[:, slot], replicate.selected_index + 1)
+        identity = uids[:] if slot == 0 else ["%s:slot:%d" % (uid, slot + 1) for uid in uids]  # slot 1 is bare
+        projection = np.einsum("pnd,md->pnm", candidates[:, slot], planes[:8])
+        ids = bits_to_code_ids(projection >= 0.0)
+        expected = [select_code_ids(ids[p], table, cell_rng("gumbel-paper-rerun/fid10k/v1", "frame-00", 2, "hmac",
+                                                           16, 8, identity[p]))[0] + 1 for p in range(len(uids))]
+        assert positions[:, slot].tolist() == expected
+    assert lib.pool_identity("p", 1) == "p" and lib.pool_identity("p", 2) == "p:slot:2"
 
 
 def test_selection_uses_only_the_first_n_candidates():

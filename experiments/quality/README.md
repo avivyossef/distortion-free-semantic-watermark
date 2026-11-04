@@ -52,7 +52,7 @@ python experiments/generation/merge_embeddings.py --shards-dir embeddings --outp
 ```
 
 Select the populations: for every configuration, frame and key, the images chosen by the
-paper's selector, and for every key a matched control that draws one of the same N candidates
+Gumbel selection of the paper (`watermark.selection`), and for every key a matched control that draws one of the same N candidates
 uniformly.
 
 ```bash

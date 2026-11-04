@@ -23,18 +23,24 @@ coding
     ``bits_to_code_ids(bool_array)``  pack bits into integer code IDs.
     ``project(embeddings, planes, m)``  signed projections (sign = bit, abs = margin).
 selection
-    ``select_candidate(codes, key, rng)``  Algorithm 1 over bit tuples -> ``SelectionTrace``.
-    ``select_code_ids(code_ids, scores, rng)``  Algorithm 1 over a score table.
+    ``select_candidate(codes, key, rng)``  Gumbel selection over bit tuples -> ``SelectionTrace``.
+    ``select_code_ids(code_ids, scores, rng)``  Gumbel selection over a score table:
+    ``c* = argmax_c log F(c) / n_c`` (ties uniform), then a uniform member of ``c*``.
     ``cell_rng(*parts)``  selector RNG from a textual identity.
 selection_rules
-    ``select(rule, code_ids, scores=, layer_tables=, rng=)`` with ``rule`` in
-    ``RULES = ("current", "gumbel", "tournament")``; ``detector_table(rule, ...)``;
+    The paper's appendix rule comparison. ``select(rule, code_ids, scores=, layer_tables=, rng=)``
+    with ``rule`` in ``RULES = ("representative", "gumbel", "tournament")``;
+    ``select_representative`` (representative sampling); ``detector_table(rule, ...)``;
     ``tournament_layer_tables(key, m=, layers=)``; ``tournament_layers(n)``.
 detection
     ``replicate_scores(candidates, cleans, uids, planes, key, frame_id=, key_trial=, n=, m=,
-    activation=, radius=, folds=, rule="current", slot=None)``  select, calibrate delta and
-    score one (frame, key) replicate -> ``ReplicateScores`` (``.clean.scores``,
-    ``.watermarked.scores``, ``.deltas``, ``.selected_index``, ``.table`` ...).
+    activation=, radius=, folds=, rule="gumbel", slot=None)``  select (Gumbel selection; other rules
+    only in the rule comparison), calibrate delta and score one (frame, key) replicate ->
+    ``ReplicateScores`` (``.clean.scores``, ``.watermarked.scores``, ``.deltas``,
+    ``.selected_index``, ``.table`` ...).
+    ``selector_rng(rule, frame_id, key_trial, n, m, uid, slot=None)``  the selector stream of
+    the paper's runs: ``slot=None`` for experiments that edit the selected images, ``slot=s`` for
+    the set-size experiments.
     ``boundary_max_score(code_id, margins, table, delta=, radius=)``  one image.
     ``boundary_scores(code_ids, margins, table, deltas, radius=)``  many images.
     ``score_embeddings(embeddings, planes, m, table, deltas, radius=)``  e.g. edited images.

@@ -12,13 +12,12 @@ def _key(index: int) -> bytes:
     return prf.derive_trial_key(KEY, index)
 
 
-def test_all_distinct_codes_select_the_highest_scoring_candidate():
+def test_all_distinct_codes_select_the_best_exponential_race_code():
     codes = [(0, 0), (0, 1), (1, 0), (1, 1)]
     trace = selection.select_candidate(codes, KEY, np.random.default_rng(0))
     scores = [prf.score_code(KEY, code) for code in codes]
-    assert trace.branch == "unique_max" and trace.distinct_code_count == 4
+    assert trace.distinct_code_count == 4 and trace.tie_count == 1
     assert trace.selected_index == int(np.argmax(scores)) and trace.selected_score == max(scores)
-    assert trace.duplicate_indices == () and trace.max_tie_count == 1
 
 
 def test_identical_codes_select_a_uniform_candidate():
@@ -29,11 +28,17 @@ def test_identical_codes_select_a_uniform_candidate():
     assert (counts > 60).all() and set(picks) == {0, 1, 2, 3}
 
 
-def test_trace_partitions_candidates_into_representatives_and_duplicates():
-    codes = [(0, 0), (0, 0), (1, 1), (0, 0)]
-    trace = selection.select_candidate(codes, KEY, np.random.default_rng(3))
-    assert trace.distinct_code_count == 2 and len(trace.representatives) == 2
-    assert sorted(trace.representatives + trace.duplicate_indices) == [0, 1, 2, 3]
+def test_group_size_enters_the_race_as_log_score_over_n_c():
+    # Code (0, 0) holds three candidates: its race value is log(0.3) / 3 = -0.40, which beats
+    # log(0.5) = -0.69 of the singleton code, although the singleton has the larger score.
+    ids = np.array([0, 0, 0, 1])
+    scores = np.array([0.3, 0.5])
+    for seed in range(20):
+        index, distinct = selection.select_code_ids(ids, scores, np.random.default_rng(seed))
+        assert index in (0, 1, 2) and distinct == 2
+    # with two singletons the larger score wins
+    index, _ = selection.select_code_ids(np.array([0, 1]), scores, np.random.default_rng(0))
+    assert index == 1
 
 
 def test_empty_pool_is_rejected():
@@ -49,8 +54,30 @@ def test_code_id_selection_matches_bit_tuple_selection(seed):
     table = prf.score_table(KEY, m)
     codes = [prf.code_bits(int(code_id), m) for code_id in ids]
     trace = selection.select_candidate(codes, KEY, np.random.default_rng(100 + seed))
-    index, branch, distinct = selection.select_code_ids(ids, table, np.random.default_rng(100 + seed))
-    assert (index, branch, distinct) == (trace.selected_index, trace.branch, trace.distinct_code_count)
+    index, distinct = selection.select_code_ids(ids, table, np.random.default_rng(100 + seed))
+    assert (index, distinct) == (trace.selected_index, trace.distinct_code_count)
+
+
+def test_bit_tuple_selection_handles_long_codes():
+    codes = [tuple(int(b) for b in np.random.default_rng(i % 3).integers(0, 2, size=64)) for i in range(6)]
+    trace = selection.select_candidate(codes, KEY, np.random.default_rng(0))
+    assert 0 <= trace.selected_index < 6 and trace.distinct_code_count == 3
+
+
+def test_representative_sampling_branches_and_selects_a_candidate():
+    ids = np.array([0, 0, 3, 1])
+    table = prf.score_table(KEY, 2)
+    branches = set()
+    for seed in range(60):
+        index, branch, distinct = rules.select_representative(ids, table, np.random.default_rng(seed))
+        branches.add(branch)
+        assert 0 <= index < 4 and distinct == 3
+        if branch == "duplicate_uniform":
+            assert index in (0, 1)
+    assert branches == {"unique_max", "duplicate_uniform"}
+    index, branch, _ = rules.select_representative(np.array([0, 1, 2, 3]), np.array([.2, .9, .5, .1]),
+                                                   np.random.default_rng(0))
+    assert (index, branch) == (1, "unique_max")
 
 
 def _selection_law(pick, trials: int = 3000, n: int = 4):
@@ -60,7 +87,7 @@ def _selection_law(pick, trials: int = 3000, n: int = 4):
     return counts / trials
 
 
-def test_algorithm_one_is_distortion_free_over_keys():
+def test_gumbel_selection_is_distortion_free_over_keys():
     # Averaged over keys and sampler randomness every candidate is chosen with probability 1/N,
     # even when codes collide.
     ids = np.array([0, 0, 3, 1])
@@ -69,8 +96,8 @@ def test_algorithm_one_is_distortion_free_over_keys():
     assert np.abs(law - 0.25).max() < 0.035
 
 
-@pytest.mark.parametrize("rule", ["gumbel", "tournament"])
-def test_alternative_rules_are_distortion_free_over_keys(rule):
+@pytest.mark.parametrize("rule", ["representative", "gumbel", "tournament"])
+def test_every_rule_is_distortion_free_over_keys(rule):
     ids = np.array([0, 0, 3, 1])
 
     def pick(trial: int) -> int:
@@ -80,6 +107,11 @@ def test_alternative_rules_are_distortion_free_over_keys(rule):
         return rules.select(rule, ids, scores=scores, layer_tables=tables, rng=np.random.default_rng(trial))[0]
 
     assert np.abs(_selection_law(pick) - 0.25).max() < 0.035
+
+
+def test_gumbel_rule_is_the_selection_module_function():
+    assert rules.select_gumbel is selection.select_code_ids
+    assert rules.RULES == ("representative", "gumbel", "tournament")
 
 
 def test_gumbel_picks_the_best_exponential_race_code():
@@ -117,3 +149,19 @@ def test_cell_rng_depends_on_every_identity_part():
     a = selection.cell_rng("x", 1, "p").random()
     assert a == selection.cell_rng("x", 1, "p").random()
     assert a != selection.cell_rng("x", 2, "p").random() and a != selection.cell_rng("x", 1, "q").random()
+
+
+def test_selector_streams_follow_the_papers_identities():
+    from watermark.detection import DETECTION_STREAM, EDIT_STREAM, selector_rng
+
+    def same(a, b):
+        return a.random() == b.random()
+
+    args = ("frame-02", 3, 16, 8)
+    assert same(selector_rng("gumbel", *args, "p", slot=2),
+                selection.cell_rng(DETECTION_STREAM, "gumbel", *args, "p:slot:2"))
+    assert same(selector_rng("gumbel", *args, "p"), selection.cell_rng(EDIT_STREAM, "gumbel", *args, "p"))
+    assert same(selector_rng("representative", *args, "p", slot=1),
+                selection.cell_rng("candidate-pool-sweep", "frame-02", 3, "hmac", 16, 8, "p:slot:1"))
+    assert not same(selector_rng("gumbel", *args, "p"), selector_rng("gumbel", *args, "p", slot=1))
+    assert not same(selector_rng("gumbel", *args, "p"), selector_rng("tournament", *args, "p"))

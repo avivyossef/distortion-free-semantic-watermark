@@ -32,10 +32,11 @@ sys.path.insert(0, str(PUBLIC / "experiments" / "generation"))
 from detection_corpus import deal, panel_images, read_master_key, read_panel, read_prompts  # noqa: E402,F401
 
 from watermark.coding import bits_to_code_ids  # noqa: E402
-from watermark.detection import selector_rng  # noqa: E402
 from watermark.prf import derive_trial_key, score_table  # noqa: E402
-from watermark.selection import select_code_ids  # noqa: E402
+from watermark.selection import cell_rng, select_code_ids  # noqa: E402
 
+# Selector stream of the quality populations (matched-population FID, Vendi, FID against real images).
+SELECTOR_DOMAIN = "gumbel-paper-rerun/fid10k/v1"
 MATCHED_RANDOM_DOMAIN = "flattened-quality-matched-random/v1"
 UNIFORM_DOMAIN = "same-prompt-vendi-uniform"
 FID_DIMENSION = 2048
@@ -65,14 +66,19 @@ def trial_keys(master_key: bytes, count: int) -> Dict[int, bytes]:
     return {trial: derive_trial_key(master_key, trial) for trial in range(count)}
 
 
+def pool_identity(prompt_uid: str, slot: int) -> str:
+    """Selector identity of the pool in ``slot`` (1-based): slot 1 is the bare prompt identity."""
+    return str(prompt_uid) if slot == 1 else "%s:slot:%d" % (prompt_uid, slot)
+
+
 def select_positions(
     candidate_vectors: np.ndarray, planes: np.ndarray, key: bytes, *, frame_id: str, key_trial: int,
     n: int, m: int, prompt_uids: Sequence[str],
 ) -> np.ndarray:
-    """Algorithm 1 on the first ``n`` candidates of every (prompt, slot) pool.
+    """Gumbel selection on the first ``n`` candidates of every (prompt, slot) pool.
 
-    ``candidate_vectors`` is ``(P, S, N, D)``. The selector identity of a pool is the prompt
-    identity qualified by its slot, as in ``watermark.detection.replicate_scores(slot=...)``.
+    ``candidate_vectors`` is ``(P, S, N, D)``. The selector draws are
+    ``cell_rng(SELECTOR_DOMAIN, frame_id, key_trial, "hmac", n, m, pool_identity(prompt, slot))``.
     Returns the 1-based selected positions ``(P, S)``.
     """
     vectors = np.asarray(candidate_vectors)
@@ -84,7 +90,7 @@ def select_positions(
     positions = np.empty(code_ids.shape[:2], dtype=np.int64)
     for p, prompt_uid in enumerate(prompt_uids):
         for s in range(code_ids.shape[1]):
-            rng = selector_rng("current", frame_id, key_trial, n, m, "%s:slot:%d" % (prompt_uid, s + 1))
+            rng = cell_rng(SELECTOR_DOMAIN, frame_id, key_trial, "hmac", n, m, pool_identity(prompt_uid, s + 1))
             positions[p, s] = select_code_ids(code_ids[p, s], table, rng)[0] + 1
     return positions
 

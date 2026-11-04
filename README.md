@@ -1,96 +1,123 @@
+<div align="center">
+
 # Distortion-Free Semantic Watermarks for Black-Box Generative Models
 
-Aviv Yossef, Or Patashnik, Or Zamir (Tel Aviv University)
+**Aviv Yossef · Or Patashnik · Or Zamir**<br>
+Tel Aviv University
 
-Code for the paper. The watermark needs only sampling access to a generator:
-for each request it draws N candidate images, maps each one to an M-bit code
-through random hyperplanes over a semantic encoder's embedding, and returns
-the candidate whose code has the highest keyed pseudorandom score. Over keys,
-the output distribution equals the generator's. Detection recomputes the code
-of a suspect image, also scores the codes reachable by flipping bits that lie
-close to a hyperplane boundary, and compares the best keyed score (averaged
-over a set of B images) with a threshold calibrated on unwatermarked images.
+Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · Encoder weights (coming soon)
 
-## Repository layout
+<img src="docs/assets/method.svg" alt="Watermarked generation with Gumbel selection, then detection from a set of images" width="100%">
 
-| Path | Contents |
-|---|---|
-| `watermark/` | The method: keyed PRF, hyperplane codes, Algorithm 1 and the alternative sampling rules, boundary-aware detection, calibration, metrics, encoders, SD2.1 generation, the ordinary edits |
-| `encoder/` | The semantic encoder: DINOv2-base with a rank-8 LoRA and an MLP head, its training data and training loop |
-| `configs/detection.yaml` | Every detector setting the paper uses; all experiments read it |
-| `configs/assets.yaml` | Pinned model revisions and the encoder checkpoint binding |
-| `experiments/` | One directory per paper result, each with a README giving the exact commands |
-| `third_party/clone.sh` | Clones the native baselines at the commits the paper used |
-| `tests/` | CPU tests on synthetic data |
-| `docs/` | Project page (GitHub Pages) |
+</div>
+
+This repository implements semantic watermarking by selecting among outputs
+from a black-box generator. The method needs only independent samples from
+the generator and queries to a semantic encoder, making it applicable to
+closed image-generation APIs.
+
+The watermark is *distortion-free*: averaged over the secret detection key
+and sampler randomness, a single output has the generator's original
+distribution. The guarantee is over keys; the paper measures the quality and
+diversity of a single fixed key empirically.
+Semantic detection is designed to tolerate content-preserving edits such as
+compression, cropping, and resizing.
+
+## Method
+
+For each request, we draw *N* independent candidate images, embed them, and
+map their embeddings to *M*-bit codes using fixed random hyperplanes.
+A secret key assigns each code a pseudorandom score *F*(*c*).
+**Gumbel selection** chooses the code maximizing
+log *F*(*c*) / *n*<sub>*c*</sub>, where *n*<sub>*c*</sub> is its number of
+candidates, then returns a uniformly random candidate from that group.
+Averaged over keys and sampler randomness, each candidate is returned with
+probability 1/*N*.
+
+Detection uses the same encoder, hyperplanes, and secret key. The
+**boundary-aware detector** scores an image's code and also considers nearby
+codes when its embedding lies close to a hyperplane. We average the image
+scores over a batch of *B* images from one source and compare the average
+with a threshold calibrated on unwatermarked images. The experiments use
+this detector for both clean and edited images. Batch averaging addresses
+the limited evidence available from a single image.
+
+The encoder must distinguish independent generations from the same prompt
+while keeping each image close to its edited versions. Standard semantic
+encoders may map those independent generations close together. We train a
+DINOv2 encoder with LoRA to balance separation and stability. The variation
+among generations that remains distinguishable after editing is the
+*semantic entropy* needed for selection to introduce a detectable signal.
 
 ## Installation
 
 ```bash
+git clone https://github.com/avivyossef/distortion-free-semantic-watermark.git
+cd distortion-free-semantic-watermark
 conda env create -f environment.yml
 conda activate semantic-watermark
+python scripts/download_checkpoint.py --output-dir checkpoints   # trained encoder, SHA-256 checked
 ```
 
-The native baselines (Tree-Ring, Gaussian Shading, SEAL) need their own
-environments; see `experiments/baselines/README.md`. Experiments that generate
-or embed images need a CUDA GPU.
+Generating and embedding images needs a CUDA GPU. Tree-Ring, Gaussian Shading
+and SEAL run in their own environments (`experiments/baselines`).
 
-Download the trained encoder and verify its SHA-256:
+## Usage
+
+Keep keys private (`keys/` is git-ignored). Create a generation-seed key and
+a detector key:
 
 ```bash
-python scripts/download_checkpoint.py --output-dir checkpoints
+python experiments/generation/new_key.py --output keys/seed.key
+python experiments/generation/new_key.py --output keys/detector.key
 ```
 
-## Keys
-
-Watermark keys are never part of the repository. Create a master key with
+The following clean-detection workflow generates Stable Diffusion 2.1
+candidates for a prompt list, embeds them, and evaluates detection.
+The prompt list contains JSONL rows with `prompt_uid` and `text` fields.
 
 ```bash
-python experiments/generation/new_key.py --output keys/master.key
+python experiments/generation/generate_corpus.py --prompts prompts.jsonl \
+    --seed-key-file keys/seed.key --output-dir corpus
+python experiments/generation/embed_corpus.py --corpus-dir corpus --prompts prompts.jsonl \
+    --encoder ours --checkpoint checkpoints/checkpoint-step-00019840.pt --output-dir embeddings
+python experiments/generation/merge_embeddings.py --shards-dir embeddings --output cache.npz
+python experiments/clean_detection/run_clean_detection.py --cache cache.npz \
+    --key-file keys/detector.key --output-dir clean_detection
+python experiments/clean_detection/summarize_clean_detection.py \
+    --shards-dir clean_detection --output-dir clean_detection/summary
 ```
 
-and keep it private. Reruns with a new key are statistically equivalent to the
-paper's runs but not image-for-image identical.
+The paper's 1,000 COCO prompts are a release asset:
+`python scripts/download_checkpoint.py --asset prompts --output-dir prompts`.
 
-## Determinism
-
-Every random choice is derived from a key or a fixed seed: generation seeds from
-the seed key, prompt, slot and candidate position; hyperplane frames from the
-frame seeds in `configs/detection.yaml`; PRF keys from the master key. The same
-inputs therefore select the same candidates and give the same detection scores.
-Images regenerated on a different GPU, driver or library version agree with the
-originals only to floating-point tolerance, not bit for bit, so pin the
-environment in `environment.yml` when comparing runs.
+`watermark/` contains keyed scores, hyperplane codes, sampling rules,
+boundary-aware detection, and calibration. `encoder/` contains the semantic
+encoder. The paper's detector settings are in `configs/detection.yaml`.
 
 ## Reproducing the paper
 
-Start with `experiments/generation`, which builds the SD2.1 candidate corpus
-that most experiments read. Each directory's README lists its inputs and the
-exact commands.
+Each directory under `experiments/` covers one part of the paper; its README
+lists the inputs and exact commands. Outputs and measured results vary
+across reruns with fresh keys.
 
-| Paper result | Directory |
+| Paper | Code |
 |---|---|
-| Semantic encoder training | `experiments/encoder_training` |
-| Same-prompt cosine and semantic entropy across encoders; entropy-vs-radius figure; stability under perturbations; distinct-code figures | `experiments/encoder_comparison` |
-| SD2.1 candidate corpus (prompts, candidates, clean controls, embeddings, selections) | `experiments/generation` |
-| Generation quality and diversity (FID, relative Vendi); FID against real images and CLIPScore | `experiments/quality` |
-| Clean detection table, operating points, ROC figures | `experiments/clean_detection` |
-| Selected detector settings | `experiments/detector_sweep` |
-| Native baselines (all baseline rows and cells) | `experiments/baselines` |
-| Robustness to ordinary edits; encoder similarity versus retention | `experiments/robustness` |
-| Generative-edit panel | `experiments/generative_edits` |
-| Semantic-encoder ablation | `experiments/encoder_ablation` |
-| Alternative sampling rules (Gumbel, Tournament) | `experiments/sampling_rules` |
-| Style versus depth encoders | `experiments/style_depth_encoders` |
-| Closed-API generator (GPT Image) | `experiments/closed_api` |
+| Semantic encoder and its training | [`experiments/encoder_training`](experiments/encoder_training) |
+| Encoder comparison, semantic entropy, stability | [`experiments/encoder_comparison`](experiments/encoder_comparison) |
+| SD2.1 candidate corpus | [`experiments/generation`](experiments/generation) |
+| Generation quality and diversity | [`experiments/quality`](experiments/quality) |
+| Clean detection | [`experiments/clean_detection`](experiments/clean_detection) |
+| Detector settings | [`experiments/detector_sweep`](experiments/detector_sweep) |
+| Tree-Ring, Gaussian Shading, SEAL | [`experiments/baselines`](experiments/baselines) |
+| Robustness to ordinary edits | [`experiments/robustness`](experiments/robustness) |
+| Robustness to generative edits | [`experiments/generative_edits`](experiments/generative_edits) |
+| Encoder ablation | [`experiments/encoder_ablation`](experiments/encoder_ablation) |
+| Alternative sampling rules | [`experiments/sampling_rules`](experiments/sampling_rules) |
+| Style versus depth encoders | [`experiments/style_depth_encoders`](experiments/style_depth_encoders) |
+| Closed API (GPT Image) | [`experiments/closed_api`](experiments/closed_api) |
 
-## Tests
-
-```bash
-python -m pytest -q tests
-```
-
-The tests run on CPU with synthetic inputs and do not download models.
+CPU tests on synthetic data: `python -m pytest -q tests`.
 
 ## Citation
 
@@ -102,3 +129,7 @@ The tests run on CPU with synthetic inputs and do not download models.
   note   = {Preprint}
 }
 ```
+
+## License
+
+Apache-2.0. The pretrained models used here keep their own licenses.

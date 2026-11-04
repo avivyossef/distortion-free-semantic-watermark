@@ -40,7 +40,7 @@ def analyze_replicate(cache, planes, key, setting, edits, *, frame_id: str, key_
     candidates = cache.candidate_vectors[:, SLOT - 1, :n]
     result = replicate_scores(candidates, cache.clean_vectors[:, SLOT - 1], cache.prompt_uids, planes, key,
                               frame_id=frame_id, key_trial=key_trial, n=n, m=m, activation=setting.activation,
-                              radius=setting.radius, folds=cfg.folds, slot=SLOT)
+                              radius=setting.radius, folds=cfg.folds)
     rows = []
     for detector, radius in (("boundary", setting.radius), ("exact", 0)):
         for row in replicate_edit_rows(result, planes, candidates=candidates, edits=edits,

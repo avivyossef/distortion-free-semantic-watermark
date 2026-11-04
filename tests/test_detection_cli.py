@@ -64,7 +64,7 @@ def test_robustness_pipeline_and_downstream_experiments(files):
     cfg, cache, tmp = files
     planes = corpus.frame_planes(cfg, 24)
     keys = corpus.trial_keys(helpers.KEY, cfg)
-    sources = _lib.all_selected_sources(cache, cfg, planes, keys, ["current", "gumbel", "tournament"])
+    sources = _lib.all_selected_sources(cache, cfg, planes, keys, ["representative", "gumbel", "tournament"])
     edits = helpers.synthetic_edits(cache, sources)
     (tmp / "edits").mkdir()
     np.savez_compressed(str(tmp / "edits" / "edits-shard-000-of-001.npz"), source_ids=np.asarray(sources), edit_ids=np.asarray(edits.edit_ids),

@@ -7,7 +7,8 @@ the two ROC figures (linear and logarithmic FPR axes). The native baselines' row
 `experiments/baselines`.
 
 Protocol: for each configuration (N, M), five hyperplane frames x five PRF keys (25 replicates),
-each slot of the corpus is an independent candidate pool; selection, boundary calibration
+each slot of the corpus is an independent candidate pool; selection (Gumbel selection, selector identity
+`<uid>:slot:<s>`), boundary calibration
 (delta on the selected watermarked images, cross-fitted over the folds) and boundary-aware
 scoring run per slot; a set of B images scores the mean of its slots' scores; the score
 threshold tau is frozen on the clean set scores. All settings (N, M, activation, radius, FPR

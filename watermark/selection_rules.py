@@ -3,11 +3,15 @@
 Three rules share one interface: given a pool's packed M-bit code IDs, keyed score
 tables, and a selector RNG, each returns one original candidate index. Averaged over
 keys, every rule selects each candidate with probability exactly 1/N for every fixed
-pool.
+pool. Only the rule comparison (``experiments/sampling_rules``) chooses among them;
+every other experiment selects with :func:`watermark.selection.select_code_ids`.
 
-- ``current``: the paper's Algorithm 1 (:func:`watermark.selection.select_code_ids`).
-- ``gumbel``: exponential race, ``c* = argmax_c log(u_c) / n_c``, then uniform within
-  ``c*``. ``Pr[c* = c] = n_c / N`` over keys.
+- ``representative``: representative sampling (the paper's appendix Algorithm
+  "Representative sampling", :func:`select_representative`): one uniform representative per
+  code, the best-scoring representative with probability ``|U| / N``, otherwise a uniform
+  non-representative.
+- ``gumbel``: Gumbel selection, the method of the paper (:func:`watermark.selection.select_code_ids`):
+  ``c* = argmax_c log F(c) / n_c``, then uniform within ``c*``. ``Pr[c* = c] = n_c / N`` over keys.
 - ``tournament``: SynthID-style knockout over a uniform random bracket with an
   independent keyed score table per layer; ties (including same-code matches) break
   uniformly. Its detector statistic is the mean of the per-layer scores.
@@ -21,9 +25,9 @@ from typing import Optional
 
 import numpy as np
 
-from .selection import select_code_ids
+from .selection import select_code_ids as select_gumbel
 
-RULES = ("current", "gumbel", "tournament")
+RULES = ("representative", "gumbel", "tournament")
 TOURNAMENT_LAYER_DOMAIN = b"distortion-free-watermark/tournament-layer-score/v1\0"
 
 
@@ -58,14 +62,25 @@ def tournament_layers(n: int) -> int:
     return n.bit_length() - 1
 
 
-def select_gumbel(code_ids: np.ndarray, scores: np.ndarray, rng: np.random.Generator) -> "tuple[int, int]":
-    """Exponential race over distinct codes, then a uniform member of the winner."""
+def select_representative(
+    code_ids: np.ndarray, scores: np.ndarray, rng: np.random.Generator
+) -> "tuple[int, str, int]":
+    """Representative sampling over packed code IDs and a keyed score table.
+
+    One uniform representative is drawn per occupied code; with probability ``|U| / N`` the
+    highest-scoring representative is returned (ties uniform), otherwise a uniform
+    non-representative. Returns ``(selected_index, branch, distinct_code_count)`` with
+    ``branch`` ``"unique_max"`` or ``"duplicate_uniform"``.
+    """
     groups = _groups(code_ids)
-    keys = {code: float(np.log(scores[code])) / len(members) for code, members in groups.items()}
-    best = max(keys.values())
-    winners = [code for code, value in keys.items() if value == best]
-    winner = winners[0] if len(winners) == 1 else int(rng.choice(winners))
-    return int(rng.choice(groups[winner])), len(groups)
+    representatives = tuple(int(rng.choice(group)) for group in groups.values())
+    representative_set = set(representatives)
+    duplicates = tuple(index for index in range(len(code_ids)) if index not in representative_set)
+    if not duplicates or float(rng.random()) < len(representatives) / len(code_ids):
+        best_score = max(float(scores[int(code_ids[index])]) for index in representatives)
+        maxima = [index for index in representatives if float(scores[int(code_ids[index])]) == best_score]
+        return int(rng.choice(maxima)), "unique_max", len(groups)
+    return int(rng.choice(duplicates)), "duplicate_uniform", len(groups)
 
 
 def select_tournament(
@@ -97,8 +112,8 @@ def select(
     rng: np.random.Generator,
 ) -> "tuple[int, int]":
     """Dispatch one selection; returns ``(selected_index, distinct_code_count)``."""
-    if rule == "current":
-        selected, _, distinct = select_code_ids(code_ids, scores, rng)
+    if rule == "representative":
+        selected, _, distinct = select_representative(code_ids, scores, rng)
         return selected, distinct
     if rule == "gumbel":
         return select_gumbel(code_ids, scores, rng)
@@ -110,8 +125,8 @@ def select(
 
 
 def detector_table(rule: str, *, scores: np.ndarray, layer_tables: Optional[np.ndarray]) -> np.ndarray:
-    """Per-code detector statistic: F_K for current/gumbel, mean layer score for tournament."""
-    if rule in ("current", "gumbel"):
+    """Per-code detector statistic: F_K for representative/gumbel, mean layer score for tournament."""
+    if rule in ("representative", "gumbel"):
         return np.asarray(scores, dtype=np.float64)
     if rule == "tournament":
         if layer_tables is None:

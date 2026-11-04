@@ -3,6 +3,10 @@
 # counts or frame/key counts.
 prf: hmac-sha256
 
+# Candidate selection is Gumbel selection in every experiment (watermark.selection); only the
+# sampling-rule comparison also runs representative sampling and Tournament. The selector stream
+# differs by experiment (watermark.detection.selector_rng). Nothing here selects the rule.
+
 # The paper's selected settings, one per (N, M).
 configs:
   - {N: 8,  M: 4,  activation: 0.10, radius: 1}

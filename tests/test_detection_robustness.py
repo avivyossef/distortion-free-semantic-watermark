@@ -28,13 +28,13 @@ def world():
     cache = helpers.synthetic_cache(prompts=100, slots=2, n=16)
     planes = corpus.frame_planes(cfg, 24)
     keys = corpus.trial_keys(helpers.KEY, cfg)
-    sources = _lib.all_selected_sources(cache, cfg, planes, keys, ["current"])
+    sources = _lib.all_selected_sources(cache, cfg, planes, keys)
     return cfg, cache, planes, keys, helpers.synthetic_edits(cache, sources)
 
 
 def test_selected_indices_equal_the_detector_selection(world):
     cfg, cache, planes, keys, _ = world
-    for rule in ("current", "gumbel", "tournament"):
+    for rule in ("representative", "gumbel", "tournament"):
         for setting in cfg.settings:
             if rule == "tournament" and setting.n & (setting.n - 1):
                 continue
@@ -44,7 +44,7 @@ def test_selected_indices_equal_the_detector_selection(world):
             replay = detection.replicate_scores(
                 cache.candidate_vectors[:, 0, :setting.n], cache.clean_vectors[:, 0], cache.prompt_uids,
                 planes["frame-01"], keys[1], frame_id="frame-01", key_trial=1, n=setting.n, m=setting.m,
-                activation=setting.activation, radius=setting.radius, folds=cfg.folds, rule=rule, slot=1)
+                activation=setting.activation, radius=setting.radius, folds=cfg.folds, rule=rule)
             assert np.array_equal(mine, replay.selected_index)
 
 
@@ -53,13 +53,13 @@ def test_sources_cover_clean_images_and_every_selected_candidate(world):
     sources = set(edits.index)
     assert all("%s:clean" % uid in sources for uid in cache.prompt_uids)
     assert all(s.endswith(":clean") or s.split(":")[1] == "candidate" for s in sources)
-    more = _lib.all_selected_sources(cache, cfg, planes, keys, ["current", "gumbel"])
+    more = _lib.all_selected_sources(cache, cfg, planes, keys, ["representative", "gumbel"])
     assert sources <= set(more)
 
 
 def test_unchanged_images_keep_their_detections(world):
     cfg, cache, planes, keys, _ = world
-    sources = _lib.all_selected_sources(cache, cfg, planes, keys, ["current"])
+    sources = _lib.all_selected_sources(cache, cfg, planes, keys)
     identity = helpers.synthetic_edits(cache, sources, strength=0.0)
     setting = cfg.settings[1]
     rows = analysis.analyze_replicate(cache, planes["frame-00"], keys[0], setting, identity, frame_id="frame-00",
@@ -77,7 +77,7 @@ def test_unchanged_images_keep_their_detections(world):
 
 def test_strong_edits_lower_detection_and_cosine(world):
     cfg, cache, planes, keys, _ = world
-    sources = _lib.all_selected_sources(cache, cfg, planes, keys, ["current"])
+    sources = _lib.all_selected_sources(cache, cfg, planes, keys)
     mild = helpers.synthetic_edits(cache, sources, strength=0.02)
     strong = helpers.synthetic_edits(cache, sources, strength=2.0)
     args = dict(frame_id="frame-00", key_trial=0, cfg=cfg)

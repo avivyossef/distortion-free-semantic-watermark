@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
 """Clean detection and detection after edits under the three distortion-free sampling rules.
 
-``current`` is the paper's Algorithm 1; ``gumbel`` and ``tournament`` are the code-level Gumbel
-and non-distortionary Tournament adaptations (``watermark.selection_rules``). Every rule replays
+``representative`` is representative sampling (the appendix alternative to the paper's Gumbel
+selection); ``gumbel`` is Gumbel selection, the method of every other experiment; ``tournament`` is the
+code-level non-distortionary Tournament adaptation (``watermark.selection_rules``). Every rule replays
 the same candidate pools, embeddings, hyperplane frames and keys, the same per-(N, M) detector
 settings and the same clean-image threshold calibration, with the rule's own keyed score
 (single-image setting). Only candidate selection (and the tournament's per-code statistic)
@@ -10,14 +11,15 @@ changes.
 
     python experiments/sampling_rules/run_rules.py --cache cache.npz --key-file keys/detector.key \
         --output-dir rules --shard-index 0 --num-shards 1
-    # optional, for the detection-after-editing comparison (embed_ordinary_edits.py --rules current gumbel tournament)
+    # optional, for the detection-after-editing comparison (embed_ordinary_edits.py --compare-rules)
     python experiments/sampling_rules/run_rules.py --cache cache.npz --prompts prompts200.jsonl \
         --edits edits --key-file keys/detector.key --output-dir rules
 
 Without ``--edits`` the script scores clean detection on all prompts of the cache (rows
 ``clean-shard-III-of-KKK.jsonl``); with ``--edits`` it scores the 20 ordinary edits on the prompts
 of ``--prompts`` (rows ``edits-shard-III-of-KKK.jsonl``, edited TPR and paired retention at each
-FPR target). Replicates (rule x configuration x frame x key) are dealt round-robin to shards.
+FPR target). Clean detection draws the selector as the set-size experiments do (identity ``<uid>:slot:1``),
+the edit comparison as the robustness experiments do (bare prompt identity). Replicates (rule x configuration x frame x key) are dealt round-robin to shards.
 """
 
 from __future__ import annotations
@@ -42,18 +44,20 @@ from watermark.metrics import clean_detection_roc, interpolate_roc, tpr_at_fpr  
 from watermark.selection_rules import RULES  # noqa: E402
 
 
-def _replicate(cache, planes, key, setting, rule, *, frame_id, key_trial, cfg):
+def _replicate(cache, planes, key, setting, rule, *, frame_id, key_trial, cfg, slot):
+    """One replicate under ``rule``: ``slot=SLOT`` is the clean-detection stream, ``None`` the edit stream."""
     n = setting.n
     return replicate_scores(
         cache.candidate_vectors[:, SLOT - 1, :n], cache.clean_vectors[:, SLOT - 1], cache.prompt_uids, planes, key,
         frame_id=frame_id, key_trial=key_trial, n=n, m=setting.m, activation=setting.activation,
-        radius=setting.radius, folds=cfg.folds, rule=rule, slot=SLOT)
+        radius=setting.radius, folds=cfg.folds, rule=rule, slot=slot)
 
 
 def clean_row(cache, planes, key, setting, rule, *, frame_id: str, key_trial: int, cfg: DetectionConfig
               ) -> Dict[str, Any]:
     """Clean-detection metrics of one (rule, N, M, frame, key) replicate."""
-    result = _replicate(cache, planes, key, setting, rule, frame_id=frame_id, key_trial=key_trial, cfg=cfg)
+    result = _replicate(cache, planes, key, setting, rule, frame_id=frame_id, key_trial=key_trial, cfg=cfg,
+                        slot=SLOT)
     roc = clean_detection_roc(result.clean.scores, result.watermarked.scores, cfg.fpr_targets)
     row: Dict[str, Any] = {"rule": rule, "N": setting.n, "M": setting.m, "frame_id": frame_id,
                            "key_trial": key_trial, "sample_count": len(cache.prompt_uids), "auc": roc["auc"],
@@ -70,7 +74,8 @@ def clean_row(cache, planes, key, setting, rule, *, frame_id: str, key_trial: in
 def edit_rows(cache, planes, key, setting, rule, edits, *, frame_id: str, key_trial: int, cfg: DetectionConfig
               ) -> List[Dict[str, Any]]:
     """Edited TPR / FPR / retention rows of one replicate (boundary-aware detector, ``rule``)."""
-    result = _replicate(cache, planes, key, setting, rule, frame_id=frame_id, key_trial=key_trial, cfg=cfg)
+    result = _replicate(cache, planes, key, setting, rule, frame_id=frame_id, key_trial=key_trial, cfg=cfg,
+                        slot=None)  # the selections that embed_ordinary_edits.py --compare-rules edited
     rows = replicate_edit_rows(result, planes, candidates=cache.candidate_vectors[:, SLOT - 1, :setting.n],
                                edits=edits, prompt_uids=cache.prompt_uids, n=setting.n, m=setting.m,
                                radius=setting.radius, fpr_targets=cfg.fpr_targets, detector="boundary")

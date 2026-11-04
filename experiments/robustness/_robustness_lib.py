@@ -32,9 +32,12 @@ def source_id(prompt_uid: str, position: Optional[int]) -> str:
 
 
 def selected_indices(candidates: np.ndarray, prompt_uids: Sequence[str], planes: np.ndarray, key: bytes, *,
-                     frame_id: str, key_trial: int, n: int, m: int, rule: str = "current",
-                     slot: Optional[int] = SLOT) -> np.ndarray:
-    """Index (0-based) of the candidate selected per prompt; equals ``replicate_scores(...).selected_index``."""
+                     frame_id: str, key_trial: int, n: int, m: int, rule: str = "gumbel") -> np.ndarray:
+    """Index (0-based) of the candidate selected per prompt (Gumbel selection, the edit stream).
+
+    Equals ``replicate_scores(..., rule=rule).selected_index`` with ``slot=None``; ``rule`` is
+    other than ``"gumbel"`` only in the sampling-rule comparison.
+    """
     with np.errstate(all="ignore"):
         projection = np.einsum("pnd,md->pnm", candidates[:, :n], planes[:m], optimize=True)
     code_ids = bits_to_code_ids(projection >= 0.0)
@@ -45,13 +48,17 @@ def selected_indices(candidates: np.ndarray, prompt_uids: Sequence[str], planes:
     for row, uid in enumerate(prompt_uids):
         selected[row], _ = rules.select(
             rule, code_ids[row], scores=table, layer_tables=layers,
-            rng=selector_rng(rule, frame_id, key_trial, n, m, uid if slot is None else "%s:slot:%d" % (uid, slot)))
+            rng=selector_rng(rule, frame_id, key_trial, n, m, uid))
     return selected
 
 
 def all_selected_sources(cache, cfg, planes: Mapping[str, np.ndarray], keys: Mapping[int, bytes],
-                         rules_used: Sequence[str]) -> "list[str]":
-    """Sorted identities of every image to edit: the clean controls and each candidate ever selected."""
+                         rules_used: Sequence[str] = ("gumbel",)) -> "list[str]":
+    """Sorted identities of every image to edit: the clean controls and each candidate ever selected.
+
+    ``rules_used`` is ``("gumbel",)`` except for the sampling-rule comparison, which edits the
+    selections of every rule.
+    """
     from detection_corpus import replicate_cells
 
     uids = cache.prompt_uids

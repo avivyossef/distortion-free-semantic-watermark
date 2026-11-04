@@ -32,7 +32,9 @@ Model identities, revisions and render settings (seed, steps, guidance) are pinn
   list; the panel is drawn from it and its unedited images calibrate every detector. The number of
   prompts must let each activation target select a whole number of images in the cross-fitting
   folds (`watermark.calibration.calibrate_delta` raises otherwise).
-* The detector master key file used for the corpus selections (`--key-file`).
+* The detector master key file used for the corpus selections (`--key-file`); candidates are
+  selected by Gumbel selection with the bare prompt identity as selector identity, as in
+  `experiments/robustness`.
 * For every baseline, a generation run over the same prompts with one slot
   (`experiments/baselines/generate.py --num-slots 1`), and its key file for scoring.
 * The encoder checkpoint (`scripts/download_checkpoint.py`).

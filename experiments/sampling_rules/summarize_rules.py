@@ -28,7 +28,7 @@ from watermark.config import DetectionConfig, load_detection_config  # noqa: E40
 from watermark.io import read_jsonl  # noqa: E402
 from watermark.selection_rules import RULES  # noqa: E402
 
-NAMES = {"current": "Algorithm~\\ref{alg:sampling}", "gumbel": "Gumbel", "tournament": "Tournament"}
+NAMES = {"representative": "Representative sampling", "gumbel": "Gumbel", "tournament": "Tournament"}
 
 
 def target_label(fpr: float) -> str:

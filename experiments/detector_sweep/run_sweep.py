@@ -6,8 +6,8 @@ The paper selects delta and r_ham for each (N, M) on a development set drawn fro
 false-positive rate. This script scores every grid point of ``sweep_config.yaml`` (HMAC keyed
 score only) on the development corpus, replicate by replicate:
 
-- selection and unedited scores: ``watermark.detection.replicate_scores`` (candidates, keys and
-  frames as in the evaluation); delta of each activation target is cross-fitted on the
+- selection and unedited scores: ``watermark.detection.replicate_scores`` (Gumbel selection;
+  candidates, keys and frames as in the evaluation); delta of each activation target is cross-fitted on the
   watermarked margins;
 - clean detection: AUROC, TPR from the ROC at each FPR target, and the TPR/FPR at the frozen
   clean threshold tau;
@@ -29,7 +29,7 @@ from __future__ import annotations
 import argparse
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 import numpy as np
 
@@ -56,14 +56,14 @@ def load_sweep_config(path: Path = HERE / "sweep_config.yaml") -> Dict[str, Any]
 
 
 def sweep_rows(cache, planes, key, setting, edits, sweep, *, frame_id: str, key_trial: int,
-               cfg: DetectionConfig, slot: Optional[int] = SLOT) -> List[Dict[str, Any]]:
+               cfg: DetectionConfig) -> List[Dict[str, Any]]:
     """All grid points of one (N, M, frame, key) replicate."""
     n, m = setting.n, setting.m
     candidates = cache.candidate_vectors[:, SLOT - 1, :n]
     uids = cache.prompt_uids
     base = replicate_scores(candidates, cache.clean_vectors[:, SLOT - 1], uids, planes, key, frame_id=frame_id,
                             key_trial=key_trial, n=n, m=m, activation=setting.activation, radius=setting.radius,
-                            folds=cfg.folds, slot=slot)
+                            folds=cfg.folds)
     wm_edit = edits.gather([source_id(uid, int(i) + 1) for uid, i in zip(uids, base.selected_index)])
     clean_edit = edits.gather([source_id(uid, None) for uid in uids])
     rows = []

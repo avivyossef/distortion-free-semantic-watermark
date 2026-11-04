@@ -285,8 +285,7 @@ def ours_replicates(cache: Mapping[str, Any], cfg: Any, master_key: bytes):
                 scores = replicate_scores(
                     cache["candidates"][:, :setting.n], cache["cleans"], cache["prompt_uids"],
                     frames[frame_id], keys[trial], frame_id=frame_id, key_trial=trial, n=setting.n,
-                    m=setting.m, activation=setting.activation, radius=setting.radius, folds=cfg.folds,
-                    slot=1)
+                    m=setting.m, activation=setting.activation, radius=setting.radius, folds=cfg.folds)
                 yield setting, frame_id, trial, frames[frame_id], scores
 
 

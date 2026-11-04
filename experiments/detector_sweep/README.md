@@ -7,7 +7,11 @@ threshold delta (as a clean-activation target) and the Hamming radius are swept 
 prompts, considering clean detection, detection after editing and the corresponding
 false-positive rate. The sweep is the one experiment that varies activation and radius; its grid
 is `sweep_config.yaml`. The three selected settings of `configs/detection.yaml` are read off the
-resulting table; HMAC keyed scoring only.
+resulting table; HMAC keyed scoring only. Candidates are selected by Gumbel selection, as in every
+experiment (selector stream of the edit experiments, `watermark.detection.selector_rng`). The paper's
+three selected settings were fixed before the paper's experiments were rerun under Gumbel selection and
+the sweep itself was not rerun, so this script scores the grid under the method's rule rather than
+reproducing the sweep that chose them.
 
 For every replicate (configuration x frame x key, from `configs/detection.yaml`) and grid
 point: AUROC and clean TPR; and, with delta, radius and tau fixed on the unedited images, the

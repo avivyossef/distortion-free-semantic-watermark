@@ -11,7 +11,12 @@ Encoder Training").
 
 The embedding cache feeds `clean_detection`, `robustness`, `detector_sweep`, `encoder_ablation`,
 `sampling_rules`, and `quality`; each recomputes its own selections from it with the paper's
-Algorithm 1 (`watermark.selection`).
+Gumbel selection (`watermark.selection`; the appendix rule comparison in `sampling_rules` also replays
+representative sampling and Tournament). The selector stream differs by experiment, as in the
+paper's runs (`watermark.detection.selector_rng`): the set-size experiments (`clean_detection`)
+use the pool identity `<uid>:slot:<s>`, the experiments that edit the selected images (`robustness`,
+`detector_sweep`, `encoder_ablation`, `style_depth_encoders`, `generative_edits`) the bare prompt
+identity, `quality` and `closed_api` their own domains.
 
 ## Prerequisites
 

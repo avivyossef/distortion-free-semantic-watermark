@@ -1,10 +1,18 @@
-"""Distortion-free candidate selection (the paper's Algorithm 1)."""
+"""Distortion-free candidate selection by Gumbel selection (the method of every experiment).
+
+Candidates sharing an ``M``-bit code ``c`` share the keyed score ``F_kappa(c)``. With
+``I_c`` the candidates of code ``c`` and ``n_c = |I_c|``, the selector returns a uniform member of
+``I_{c*}`` for ``c* = argmax_c log F_kappa(c) / n_c`` (ties uniform). Averaged over keys, code
+``c`` wins with probability ``n_c / N``, so every candidate is returned with probability ``1/N``.
+The paper's alternative rules (representative sampling, Tournament) live in
+:mod:`watermark.selection_rules` and are used only by the rule comparison.
+"""
 
 from __future__ import annotations
 
 import hashlib
 from dataclasses import dataclass
-from typing import Sequence
+from typing import Mapping, Sequence, Union
 
 import numpy as np
 
@@ -13,15 +21,12 @@ from .prf import pack_code, score_code
 
 @dataclass(frozen=True)
 class SelectionTrace:
-    """Selection outcome together with the collision partition it used."""
+    """Selection outcome of one candidate pool."""
 
     selected_index: int
     selected_score: float
-    branch: str  # "unique_max" or "duplicate_uniform"
-    representatives: "tuple[int, ...]"
-    duplicate_indices: "tuple[int, ...]"
     distinct_code_count: int
-    max_tie_count: int
+    tie_count: int  # codes tied for the maximum of log F / n_c (1 unless scores collide)
 
 
 def cell_rng(*parts: object) -> np.random.Generator:
@@ -30,70 +35,56 @@ def cell_rng(*parts: object) -> np.random.Generator:
     return np.random.default_rng(int.from_bytes(hashlib.sha256(message).digest()[:8], "big"))
 
 
-def select_candidate(
-    codes: Sequence[Sequence[int]], key: bytes, rng: np.random.Generator
-) -> SelectionTrace:
-    """Choose an original candidate index without changing its marginal law.
+def _race(groups: "Sequence[list[int]]", scores: "Sequence[float]", rng: np.random.Generator) -> "tuple[int, int]":
+    """Exponential race: the group maximizing ``log(score) / size`` wins; a uniform member returns.
 
-    ``codes`` are the candidates' bit tuples. One uniform representative is drawn per
-    occupied code; with probability ``|U| / N`` the highest-scoring representative is
-    returned (ties uniform), otherwise a uniform non-representative.
+    ``groups`` lists the candidate indices of every occupied code in order of first occurrence and
+    ``scores`` the keyed score of each group's code. Returns ``(selected_index, tie_count)``.
     """
-    if not codes:
-        raise ValueError("codes must contain at least one candidate")
-
-    validated_codes = tuple(tuple(code) for code in codes)
-    for code in validated_codes:
-        pack_code(code)
-
-    groups: "dict[tuple[int, ...], list[int]]" = {}
-    for index, code in enumerate(validated_codes):
-        groups.setdefault(code, []).append(index)
-    representatives = tuple(int(rng.choice(group)) for group in groups.values())
-    representative_set = set(representatives)
-    duplicates = tuple(index for index in range(len(codes)) if index not in representative_set)
-
-    if not duplicates or rng.random() < len(representatives) / len(codes):
-        scores = {index: score_code(key, validated_codes[index]) for index in representatives}
-        maximum_score = max(scores.values())
-        maxima = [index for index, value in scores.items() if value == maximum_score]
-        selected = int(rng.choice(maxima))
-        branch = "unique_max"
-        max_tie_count = len(maxima)
-        selected_score = scores[selected]
-    else:
-        selected = int(rng.choice(duplicates))
-        branch = "duplicate_uniform"
-        max_tie_count = 0
-        selected_score = score_code(key, validated_codes[selected])
-
-    return SelectionTrace(
-        selected_index=selected,
-        selected_score=selected_score,
-        branch=branch,
-        representatives=representatives,
-        duplicate_indices=duplicates,
-        distinct_code_count=len(groups),
-        max_tie_count=max_tie_count,
-    )
+    values = [float(np.log(score)) / len(members) for score, members in zip(scores, groups)]
+    best = max(values)
+    winners = [position for position, value in enumerate(values) if value == best]
+    winner = winners[0] if len(winners) == 1 else int(rng.choice(winners))
+    return int(rng.choice(groups[winner])), len(winners)
 
 
 def select_code_ids(
-    code_ids: np.ndarray, scores: np.ndarray, rng: np.random.Generator
-) -> "tuple[int, str, int]":
-    """Algorithm 1 over packed integer code IDs and a precomputed keyed score table.
+    code_ids: np.ndarray, scores: Union[np.ndarray, Mapping[int, float]], rng: np.random.Generator
+) -> "tuple[int, int]":
+    """Gumbel selection over packed integer code IDs and a keyed score table.
 
-    Returns ``(selected_index, branch, distinct_code_count)``. Equivalent to
-    :func:`select_candidate` given the same RNG state, but vectorised over a score table.
+    ``scores`` maps a code ID to its keyed score (an array indexed by code ID, e.g.
+    :func:`watermark.prf.score_table`, or a mapping). Returns ``(selected_index,
+    distinct_code_count)``.
     """
     groups: "dict[int, list[int]]" = {}
     for index, code_id in enumerate(np.asarray(code_ids, dtype=np.int64).tolist()):
         groups.setdefault(int(code_id), []).append(index)
-    representatives = tuple(int(rng.choice(group)) for group in groups.values())
-    representative_set = set(representatives)
-    duplicates = tuple(index for index in range(len(code_ids)) if index not in representative_set)
-    if not duplicates or float(rng.random()) < len(representatives) / len(code_ids):
-        best_score = max(float(scores[int(code_ids[index])]) for index in representatives)
-        maxima = [index for index in representatives if float(scores[int(code_ids[index])]) == best_score]
-        return int(rng.choice(maxima)), "unique_max", len(groups)
-    return int(rng.choice(duplicates)), "duplicate_uniform", len(groups)
+    selected, _ = _race(list(groups.values()), [scores[code] for code in groups], rng)
+    return selected, len(groups)
+
+
+def select_candidate(
+    codes: Sequence[Sequence[int]], key: bytes, rng: np.random.Generator
+) -> SelectionTrace:
+    """Gumbel selection over the candidates' bit tuples (any code length up to 64 bits).
+
+    Same draws as :func:`select_code_ids` on the packed codes and the scores
+    :func:`watermark.prf.score_code` gives each code under ``key``.
+    """
+    if not codes:
+        raise ValueError("codes must contain at least one candidate")
+    validated = tuple(tuple(code) for code in codes)
+    for code in validated:
+        pack_code(code)
+    groups: "dict[tuple[int, ...], list[int]]" = {}
+    for index, code in enumerate(validated):
+        groups.setdefault(code, []).append(index)
+    group_scores = [score_code(key, code) for code in groups]
+    selected, ties = _race(list(groups.values()), group_scores, rng)
+    return SelectionTrace(
+        selected_index=selected,
+        selected_score=score_code(key, validated[selected]),
+        distinct_code_count=len(groups),
+        tie_count=ties,
+    )

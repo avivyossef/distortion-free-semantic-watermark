@@ -2,7 +2,8 @@
 
 A panel holds, per prompt, ``N`` independently requested watermark candidates and one
 independently requested clean control (every provider call asks for a single image). Detection
-uses the exact keyed score of the M-bit hyperplane code (Hamming radius 0).
+uses the exact keyed score of the M-bit hyperplane code (Hamming radius 0); candidates are
+selected by Gumbel selection under the selector stream ``SELECTOR_DOMAIN``.
 """
 
 from __future__ import annotations
@@ -28,6 +29,8 @@ from watermark.io import canonical_json, contained_path, pixel_sha256, sha256_fi
 from watermark.metrics import clean_detection_roc
 from watermark.prf import score_code
 from watermark.selection import cell_rng, select_candidate
+
+SELECTOR_DOMAIN = "gumbel-paper-rerun/closed-api/v1"  # selector stream of the paper's closed-API run
 
 MODEL_ID = "gpt-image-2.5-sunburst"
 PROMPT_COUNT = 50  # the first 50 prompts of the held-out registry
@@ -369,13 +372,13 @@ def evaluate_embeddings(
         for key_id, key in key_items:
             for prompt_index, prompt_uid in enumerate(prompts):
                 trace = select_candidate(
-                    codes_by_prompt[prompt_index], key, cell_rng("closed-api", frame_seed, m, key_id, prompt_uid),
+                    codes_by_prompt[prompt_index], key, cell_rng(SELECTOR_DOMAIN, frame_seed, m, key_id, prompt_uid),
                 )
                 clean_score = score_code(key, clean_codes[prompt_index])
                 rows.append({
                     "prompt_uid": prompt_uid, "key_id": key_id, "frame_seed": frame_seed,
                     "N": int(candidate_values.shape[1]), "M": m, "distinct_codes": trace.distinct_code_count,
-                    "selected_position": trace.selected_index + 1, "selection_branch": trace.branch,
+                    "selected_position": trace.selected_index + 1,
                     "clean_score": clean_score, "watermarked_score": trace.selected_score,
                     "score_gap": trace.selected_score - clean_score,
                 })
@@ -428,7 +431,6 @@ def evaluate_embeddings(
         "rows": rows, "replicates": replicates, "summary": summary, "mean_roc": mean_roc,
         "mean_distinct_codes": float(np.mean([row["distinct_codes"] for row in rows])),
         "all_distinct_rate": float(np.mean([row["distinct_codes"] == candidate_values.shape[1] for row in rows])),
-        "unique_max_rate": float(np.mean([row["selection_branch"] == "unique_max" for row in rows])),
         "mean_score_gap": float(np.mean([row["score_gap"] for row in rows])),
         "mean_pairwise_cosine_similarity": mean_pairwise_cosine,
         "mean_pairwise_cosine_distance": 1.0 - mean_pairwise_cosine,

@@ -12,7 +12,8 @@ Produces, from one evaluation:
   and the Spearman correlations over the 20 settings.
 
 Protocol (Detection and Robustness Protocols, "Ordinary edits"): 200 prompts, B = 1 (slot 1),
-genuine candidate pools. The same edit (`watermark.attacks`: the 20 settings) is applied to the
+genuine candidate pools; candidates are selected by Gumbel selection with the bare prompt identity as
+selector identity. The same edit (`watermark.attacks`: the 20 settings) is applied to the
 watermarked and to the unwatermarked image; delta, the Hamming radius and tau are fixed on the
 unedited images (tau from clean scores only, at each FPR target of `configs/detection.yaml`) and
 never recalibrated. Paired retention is the fraction of images detected before the edit that are

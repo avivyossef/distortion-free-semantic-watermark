@@ -49,7 +49,7 @@ def ablation_row(cache, planes, key, setting, *, frame_id: str, key_trial: int, 
     n, m = setting.n, setting.m
     result = replicate_scores(cache.candidate_vectors[:, SLOT - 1, :n], cache.clean_vectors[:, SLOT - 1],
                               cache.prompt_uids, planes, key, frame_id=frame_id, key_trial=key_trial, n=n, m=m,
-                              activation=setting.activation, radius=setting.radius, folds=cfg.folds, slot=SLOT)
+                              activation=setting.activation, radius=setting.radius, folds=cfg.folds)
     roc = clean_detection_roc(result.clean.scores, result.watermarked.scores, cfg.fpr_targets)
     row: Dict[str, Any] = {"N": n, "M": m, "frame_id": frame_id, "key_trial": key_trial,
                            "sample_count": len(cache.prompt_uids), "dimension": int(planes.shape[1]),

@@ -11,7 +11,8 @@ Produces: Table "Encoder-dependent watermark robustness" (`score_edits.py`) and 
 Settings come from the `style_depth` entry of `configs/detection.yaml`, read by
 `watermark.config.load_detection_config()`: the first 100 prompts of the SD2.1 panel (sorted
 identities), 16 slot-1 candidates and the slot-1 clean image per prompt, hyperplane frames and
-keys of the shared replication grid, selection and boundary thresholds from unedited embeddings
+keys of the shared replication grid, Gumbel selection (bare prompt identity as selector identity)
+and boundary thresholds from unedited embeddings
 only, and a score threshold set on the same unedited clean images that are evaluated.
 
 ## Prerequisites

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Select the watermarked and matched-random populations of the generation-quality metrics.
 
-For every configuration (N, M) of ``configs/detection.yaml`` the paper's selector (Algorithm 1)
+For every configuration (N, M) of ``configs/detection.yaml`` Gumbel selection (the paper's method)
 runs on the first N candidates of every (prompt, slot) pool of the embedding cache, once per
 hyperplane frame and PRF key, and a matched control draws one candidate uniformly from the
 same N for every key. The watermarked population of a (frame, key) is the set of selected

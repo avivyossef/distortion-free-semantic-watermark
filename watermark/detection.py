@@ -1,4 +1,4 @@
-"""Boundary-aware detection (paper Algorithms 2 and 3) and per-replicate scoring.
+"""Boundary-aware detection (paper Algorithms "Per-image score computation" and "Detection from multiple images") and per-replicate scoring.
 
 A replicate is one (hyperplane frame, PRF key) pair. :func:`replicate_scores` runs the
 whole clean-detection pass for one replicate and one pool of candidate embeddings:
@@ -19,7 +19,7 @@ from . import selection_rules as rules
 from .calibration import crossfit_deltas
 from .coding import bits_to_code_ids
 from .prf import score_table
-from .selection import cell_rng, select_code_ids
+from .selection import cell_rng
 
 
 def boundary_max_score(
@@ -96,23 +96,39 @@ class ReplicateScores:
     table: np.ndarray  # per-code detector statistic used for scoring
 
 
-def selector_rng(rule: str, frame_id: str, key_trial: int, n: int, m: int, identity: str) -> np.random.Generator:
-    """Selector RNG of one prompt. ``current`` keeps the identity used for the paper corpus."""
-    if rule == "current":
+DETECTION_STREAM = "selection-rule-comparison/v1"
+EDIT_STREAM = "selection-rule-comparison/attacks/v1"
+
+
+def selector_rng(rule: str, frame_id: str, key_trial: int, n: int, m: int, uid: str,
+                 slot: Optional[int] = None) -> np.random.Generator:
+    """Selector RNG of one prompt, with the stream identities of the paper's runs.
+
+    ``slot=None`` is the stream of the experiments that edit or re-embed the selected images
+    (robustness, detector sweep and ablation, encoder ablation, CSD / depth, generative edits):
+    ``EDIT_STREAM`` with the bare prompt identity. ``slot=s`` is the stream of the set-size
+    experiments (clean detection, rule comparison): ``DETECTION_STREAM`` with the identity
+    ``<uid>:slot:<s>`` of the s-th independent pool of the prompt. ``rule`` is part of the Gumbel and
+    Tournament identity; representative sampling keeps the identity of the sweep it was run in.
+    """
+    identity = uid if slot is None else "%s:slot:%d" % (uid, slot)
+    if rule == "representative":
         return cell_rng("candidate-pool-sweep", frame_id, key_trial, "hmac", n, m, identity)
-    return cell_rng("selection-rule-comparison/v1", rule, frame_id, key_trial, n, m, identity)
+    return cell_rng(EDIT_STREAM if slot is None else DETECTION_STREAM, rule, frame_id, key_trial, n, m, identity)
 
 
 def replicate_scores(
     candidates: np.ndarray, cleans: np.ndarray, prompt_uids: Sequence[str], planes: np.ndarray,
     key: bytes, *, frame_id: str, key_trial: int, n: int, m: int,
-    activation: float, radius: int, folds: int, rule: str = "current", slot: Optional[int] = None,
+    activation: float, radius: int, folds: int, rule: str = "gumbel", slot: Optional[int] = None,
 ) -> ReplicateScores:
     """Select, calibrate and score one (frame, key) replicate.
 
     ``candidates`` is ``(prompts, N, D)`` and ``cleans`` ``(prompts, D)``, both
-    unit-normalized embeddings. ``slot`` qualifies the selector identity when several
-    independent pools per prompt are scored (set sizes ``B > 1``). Delta is
+    unit-normalized embeddings. ``slot`` selects the selector stream
+    (see :func:`selector_rng`): ``None`` for the experiments that edit the selected images, a slot
+    number when several independent pools per prompt are scored (set sizes ``B > 1``). ``rule`` is
+    ``"gumbel"``, the paper's method, except in the rule comparison. Delta is
     cross-fitted over ``folds`` folds on the margins of the selected watermarked images,
     the paper's activation population, and applied to the clean controls of the same
     prompts.
@@ -139,10 +155,9 @@ def replicate_scores(
     selected = np.empty(len(prompts), dtype=np.int64)
     distinct = np.empty(len(prompts), dtype=np.int64)
     for row, prompt_uid in enumerate(prompts):
-        identity = prompt_uid if slot is None else "%s:slot:%d" % (prompt_uid, slot)
         selected[row], distinct[row] = rules.select(
             rule, candidate_ids[row], scores=scores, layer_tables=layer_tables,
-            rng=selector_rng(rule, frame_id, key_trial, n, m, identity),
+            rng=selector_rng(rule, frame_id, key_trial, n, m, prompt_uid, slot),
         )
     rows = np.arange(len(prompts))
     selected_ids = candidate_ids[rows, selected]

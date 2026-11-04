@@ -51,7 +51,7 @@ def test_sweep_grid_points_match_direct_scoring(world):
     assert len(rows) == 9
     configured = detection.replicate_scores(
         cache.candidate_vectors[:, 0, :16], cache.clean_vectors[:, 0], cache.prompt_uids, planes["frame-00"], keys[0],
-        frame_id="frame-00", key_trial=0, n=16, m=8, activation=0.25, radius=1, folds=5, slot=1)
+        frame_id="frame-00", key_trial=0, n=16, m=8, activation=0.25, radius=1, folds=5)
     row = next(r for r in rows if (r["activation"], r["radius"]) == (0.25, 1))
     from watermark.metrics import auroc
 
@@ -82,16 +82,18 @@ def test_sweep_summary_reports_differences_from_exact_detection(world, tmp_path)
     assert other["auc_delta_from_exact"] == pytest.approx(other["auc"] - exact["auc"])
 
 
-def test_ablation_of_the_trained_encoder_equals_clean_detection_at_single_images(world):
-    import run_clean_detection as clean
+def test_ablation_of_the_trained_encoder_scores_the_edit_stream_replicate(world):
+    from watermark.metrics import auroc
 
     cfg, cache, planes, keys, _ = world
     setting = cfg.settings[0]
     mine = run_ablation.ablation_row(cache, planes["frame-01"], keys[0], setting, frame_id="frame-01", key_trial=0,
                                      cfg=cfg)
-    theirs = clean.replicate_rows(cache, planes["frame-01"], keys[0], setting, frame_id="frame-01", key_trial=0,
-                                  cfg=helpers.small_config(frames=2, keys=1, set_sizes=(1,)))[0]
-    assert mine["auc"] == theirs["auc"] and mine["tpr_interp_20"] == theirs["tpr_interp_20"]
+    replicate = detection.replicate_scores(
+        cache.candidate_vectors[:, 0, :setting.n], cache.clean_vectors[:, 0], cache.prompt_uids, planes["frame-01"],
+        keys[0], frame_id="frame-01", key_trial=0, n=setting.n, m=setting.m, activation=setting.activation,
+        radius=setting.radius, folds=cfg.folds)
+    assert mine["auc"] == auroc(replicate.clean.scores, replicate.watermarked.scores)
     assert len(mine["roc_tpr"]) == len(run_ablation.ROC_GRID)
 
 
@@ -116,17 +118,17 @@ def test_ablation_runs_in_the_encoders_native_dimension_and_plots(world, tmp_pat
         plot_ablation.load_encoder_rows(tmp_path / "ours", cfg)
 
 
-def test_current_rule_clean_row_is_the_papers_pipeline(world):
+def test_gumbel_clean_row_is_the_clean_detection_pipeline(world):
     cfg, cache, planes, keys, _ = world
     setting = cfg.settings[0]
-    row = run_rules.clean_row(cache, planes["frame-00"], keys[0], setting, "current", frame_id="frame-00",
+    row = run_rules.clean_row(cache, planes["frame-00"], keys[0], setting, "gumbel", frame_id="frame-00",
                               key_trial=0, cfg=cfg)
     import run_clean_detection as clean
 
     reference = clean.replicate_rows(cache, planes["frame-00"], keys[0], setting, frame_id="frame-00", key_trial=0,
                                      cfg=helpers.small_config(frames=2, keys=1, set_sizes=(1,)))[0]
     assert row["auc"] == reference["auc"] and row["tpr_interp_20"] == reference["tpr_interp_20"]
-    other = run_rules.clean_row(cache, planes["frame-00"], keys[0], setting, "gumbel", frame_id="frame-00",
+    other = run_rules.clean_row(cache, planes["frame-00"], keys[0], setting, "representative", frame_id="frame-00",
                                 key_trial=0, cfg=cfg)
     assert other["auc"] != row["auc"]
 

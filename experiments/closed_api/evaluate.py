@@ -82,7 +82,7 @@ def main() -> int:
                                              "std_tpr"), summary)
     _write(args.output_dir / "mean_roc.csv", ("B", "mean_auc", "fpr", "mean_tpr", "std_tpr"), result["mean_roc"])
     diversity = ("mean_pairwise_cosine_similarity", "mean_pairwise_cosine_distance", "pair_count",
-                 "mean_distinct_codes", "all_distinct_rate", "unique_max_rate", "mean_score_gap")
+                 "mean_distinct_codes", "all_distinct_rate", "mean_score_gap")
     _write(args.output_dir / "diversity.csv", ("metric", "value"), [{"metric": name, "value": result[name]}
                                                                     for name in diversity])
     distinct = defaultdict(list)
