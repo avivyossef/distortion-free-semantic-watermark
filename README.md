@@ -7,7 +7,7 @@ Tel Aviv University
 
 Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · Encoder weights (coming soon)
 
-<img src="docs/assets/method.svg" alt="Watermarked generation with Gumbel selection, then detection from a set of images" width="100%">
+<img src="docs/assets/method.svg" alt="Select one image, then average the scores of a batch to detect the watermark" width="100%">
 
 </div>
 
