@@ -2,10 +2,11 @@
 """Matched-population FID (generation quality table): FID between watermarked and matched clean images.
 
 Our method, per configuration (N, M) and key ``k``: FID between the watermarked population of
-every hyperplane frame (the images selected with key ``k``) and the matched-random control of
-key ``k``, each of ``prompts x slots`` images; the five frames are averaged within the key, then
-the keys are averaged (the 95% interval is over the keys). A native baseline contributes one
-FID between its watermarked images and its own clean images over the same prompts and slots.
+every hyperplane frame (the images selected with key ``k``) and the corpus's separately
+generated clean population. Both contain one image per prompt and slot. The clean population
+is shared across configurations, frames and keys. The five frames are averaged within each key,
+then the keys are averaged (the 95% interval is over the keys). A native baseline contributes
+one FID between its watermarked images and its own clean images over the same prompts and slots.
 
     python experiments/quality/fid10k.py --selections selections.npz --ours-activations activations/ours \
         --native-activations tree_ring=activations/tree_ring gaussian_shading=activations/gaussian_shading \
@@ -28,13 +29,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 import _quality_lib as lib  # noqa: E402
 
 
-def ours_pair_rows(candidates: np.ndarray, selections: dict, metadata: dict, n: int, m: int):
+def ours_pair_rows(candidates: np.ndarray, control: tuple, selections: dict, metadata: dict, n: int, m: int):
     """FID of every (key, frame) pair of one configuration, watermarked against the matched control."""
     watermarked = selections[lib.selection_key(n, m, "watermarked")]
-    controls = selections[lib.selection_key(n, m, "random")]
     rows = []
-    for key in range(controls.shape[0]):
-        control = lib.population_statistics(lib.gather(candidates, controls[key]))
+    for key in range(watermarked.shape[1]):
         for frame, frame_id in enumerate(metadata["frame_ids"]):
             marked = lib.population_statistics(lib.gather(candidates, watermarked[frame, key]))
             rows.append({"family": "ours", "N": n, "M": m, "key": key, "frame": frame_id,
@@ -59,14 +58,19 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
     uids, selections, metadata = lib.load_selections(args.selections)
-    candidates = lib.load_shards(args.ours_activations, ["candidates"], uids)["candidates"]
+    activations = lib.load_shards(args.ours_activations, ["candidates", "cleans"], uids)
+    candidates = activations["candidates"]
+    cleans = activations["cleans"]
+    if cleans.shape != (*candidates.shape[:2], candidates.shape[-1]):
+        raise ValueError("clean and candidate activations must have matching prompts, slots and features")
+    control = lib.population_statistics(cleans)
     pair_rows, summary_rows = [], []
     for n, m in metadata["configurations"]:
-        rows = ours_pair_rows(candidates, selections, metadata, n, m)
+        rows = ours_pair_rows(candidates, control, selections, metadata, n, m)
         pair_rows.extend(rows)
         summary_rows.append({"family": "ours", "N": n, "M": m, "aggregation": "mean over frames, then keys",
                              **{"fid_" + name: value for name, value in summarize_ours(rows).items()}})
-    del candidates
+    del activations, candidates, cleans
     for name, directory in sorted(lib.parse_named_paths(args.native_activations).items()):
         shards = lib.load_shards(directory, ["watermarked", "cleans"], uids)
         fid = lib.frechet_distance(*lib.population_statistics(shards["cleans"]),

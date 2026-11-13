@@ -14,7 +14,8 @@ are used (the detection experiments use the first ``replication.keys`` of them).
 
 ``selections.npz`` holds, per configuration ``n{N}_m{M}``, ``n{N}_m{M}_watermarked`` of shape
 (frames, keys, prompts, slots) and ``n{N}_m{M}_random`` of shape (keys, prompts, slots) with
-1-based candidate positions. ``fid10k.py`` and ``clipscore.py`` read it.
+1-based candidate positions. ``fid10k.py`` reads the watermarked positions. ``clipscore.py``
+also reads the matched-random controls.
 """
 
 from __future__ import annotations
