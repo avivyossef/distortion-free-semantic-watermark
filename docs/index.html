@@ -28,7 +28,7 @@
         <h1 id="project-title">Distortion-Free Semantic Watermarks <span>for Black-Box Generative Models</span></h1>
         <p class="authors">Aviv Yossef · Or Patashnik · Or Zamir</p>
         <p class="affiliation">Tel Aviv University</p>
-        <p class="lead">Generate several images from one prompt. Use a secret key to choose which image to return. Later, use the same key to check a batch for the watermark.</p>
+        <p class="lead">Generate several images from one prompt. Use a secret key to choose which image to return. Later, use the same key to check an image for the watermark.</p>
         <div class="hero-links">
           <a class="link-button" href="https://github.com/avivyossef/distortion-free-semantic-watermark">View code</a>
           <span>Paper and encoder weights coming soon</span>
@@ -74,25 +74,20 @@
         </section>
 
         <section class="step" id="detect" data-panel aria-labelledby="detect-title" hidden>
-          <h3 id="detect-title">Give the batch one verdict</h3>
-          <p>Score each image with the same key, then compare the batch average with a detection threshold.</p>
-          <div class="step-visual batch-view">
-            <div class="image-scores" role="img" aria-label="Four image scores. One image is a crop of the returned dog image.">
-              <div class="image-score"><span class="photo c5 cropped chosen"></span><span class="score-track" style="--score: 80%"></span></div>
-              <div class="image-score"><span class="photo d1"></span><span class="score-track" style="--score: 91%"></span></div>
-              <div class="image-score"><span class="photo d2"></span><span class="score-track" style="--score: 80%"></span></div>
-              <div class="image-score"><span class="photo d3"></span><span class="score-track" style="--score: 65%"></span></div>
-            </div>
-            <svg class="merge" width="25" height="124" viewBox="0 0 25 124" aria-hidden="true">
-              <path d="M1 4C11 4 11 62 24 62M1 43C11 43 11 62 24 62M1 81C11 81 11 62 24 62M1 120C11 120 11 62 24 62M19 57l5 5-5 5"/>
-            </svg>
-            <div class="batch-average">
-              <span class="average-label">Batch average</span>
-              <span class="score-track" role="img" aria-label="The average is above the threshold.">
-                <span class="threshold"></span><span class="average-dot"></span>
+          <h3 id="detect-title">Check the image for a watermark</h3>
+          <p>Score the cropped image with the same key. A score at or above the threshold signals a watermark.</p>
+          <div class="step-visual detection-view">
+            <figure class="output-photo">
+              <span class="photo c5 cropped chosen" role="img" aria-label="A cropped version of the selected golden retriever image"></span>
+              <figcaption>Cropped image</figcaption>
+            </figure>
+            <div class="image-decision">
+              <span class="score-label" id="image-score-label">Watermark score</span>
+              <span class="score-track" role="img" aria-labelledby="image-score-label" aria-describedby="image-score-result">
+                <span class="threshold"></span><span class="score-dot"></span>
               </span>
-              <span class="threshold-label" aria-hidden="true">Threshold</span>
-              <strong class="verdict"><span aria-hidden="true">✓</span> Watermark detected</strong>
+              <span class="threshold-label">Threshold</span>
+              <strong class="verdict" id="image-score-result"><span aria-hidden="true">✓</span> Watermark detected</strong>
             </div>
           </div>
         </section>
@@ -104,7 +99,7 @@
         </div>
       </section>
       <noscript>
-        <img src="assets/method.svg" alt="Generate candidates, select one image with a key, then detect the watermark by averaging batch scores." style="width: 100%; height: auto">
+        <img src="assets/method.svg" alt="Generate candidates, select one image with a key, then compare the returned image’s score with the detection threshold." style="width: 100%; height: auto">
       </noscript>
     </section>
 
