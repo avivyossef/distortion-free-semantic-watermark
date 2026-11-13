@@ -91,10 +91,13 @@ def test_fid10k_pairs_and_summary(tmp_path, monkeypatch):
     prompts, slots, n, dim = 8, 3, 8, 6
     uids = ["p%d" % i for i in range(prompts)]
     arrays = _selection_arrays(prompts, slots, 3, 2, [(8, 4)])
+    del arrays[lib.selection_key(8, 4, "random")]
     metadata = {"frame_ids": ["frame-00", "frame-01"], "configurations": [[8, 4]], "num_keys": 3, "slots": slots}
     lib.write_selections(tmp_path / "sel.npz", uids, arrays, metadata)
+    candidates = rng.normal(size=(prompts, slots, n, dim))
+    cleans = rng.normal(loc=2, size=(prompts, slots, dim))
     lib.write_shard(tmp_path / "ours" / "activations-shard-000-of-001.npz", uids,
-                    candidates=rng.normal(size=(prompts, slots, n, dim)), cleans=rng.normal(size=(prompts, slots, dim)))
+                    candidates=candidates, cleans=cleans)
     lib.write_shard(tmp_path / "tr" / "activations-shard-000-of-001.npz", uids,
                     watermarked=rng.normal(size=(prompts, slots, dim)), cleans=rng.normal(size=(prompts, slots, dim)))
     _run("fid10k", ["--selections", tmp_path / "sel.npz", "--ours-activations", tmp_path / "ours",
@@ -103,6 +106,12 @@ def test_fid10k_pairs_and_summary(tmp_path, monkeypatch):
     pairs = list(read_csv(tmp_path / "out" / "pairs.csv"))
     ours = [row for row in pairs if row["family"] == "ours"]
     assert len(ours) == 3 * 2 and {row["frame"] for row in ours} == {"frame-00", "frame-01"}
+    controls = lib.population_statistics(cleans)
+    for row in ours:
+        frame = metadata["frame_ids"].index(row["frame"])
+        positions = arrays[lib.selection_key(8, 4, "watermarked")][frame, int(row["key"])]
+        marked = lib.population_statistics(lib.gather(candidates, positions))
+        assert float(row["fid"]) == pytest.approx(lib.frechet_distance(*controls, *marked))
     summary = {row["family"]: row for row in read_csv(tmp_path / "out" / "summary.csv")}
     by_key = {}
     for row in ours:

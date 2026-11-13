@@ -39,8 +39,9 @@ All commands run from the repository root. Every GPU step shards over prompts wi
 
 ## 1. Matched-population FID (10,000 images per population)
 
-`prompts.jsonl` has 1,000 prompts, each with 10 slots of 32 candidates, so a population holds
-10,000 images. The corpus and the embedding cache are those of the clean-detection experiment.
+`prompts.jsonl` has 1,000 prompts, each with 10 slots of 32 candidates and one separately
+generated clean image per slot. Each population holds 10,000 images. The corpus and the
+embedding cache are those of the clean-detection experiment.
 
 ```bash
 python experiments/generation/generate_corpus.py --prompts prompts.jsonl \
@@ -51,9 +52,10 @@ python experiments/generation/embed_corpus.py --corpus-dir corpus --prompts prom
 python experiments/generation/merge_embeddings.py --shards-dir embeddings --output cache.npz
 ```
 
-Select the populations: for every configuration, frame and key, the images chosen by the
-Gumbel selection of the paper (`watermark.selection`), and for every key a matched control that draws one of the same N candidates
-uniformly.
+Select the watermarked populations with Gumbel selection for every configuration, frame and key.
+For FID, all our watermarked populations use the same clean reference: one independently
+generated clean image per prompt and slot, already saved in the corpus. The corpus generator
+checks that every candidate and clean image within a prompt uses a distinct seed.
 
 ```bash
 python experiments/quality/select_populations.py --cache cache.npz --key-file keys/detector.key \
@@ -62,7 +64,7 @@ python experiments/quality/select_populations.py --cache cache.npz --key-file ke
 
 Generate the native baselines with 10 slots (their own clean image per slot is the matched
 control; `--official-root`, key file and environments as in the baselines README), then compute
-the Inception activations of every candidate and every native image once:
+the Inception activations of every candidate and clean image in the corpus and every native image:
 
 ```bash
 python experiments/baselines/generate.py --method tree_ring --prompts prompts.jsonl --num-slots 10 \
@@ -87,6 +89,9 @@ python experiments/quality/fid10k.py --selections selections.npz --ours-activati
 
 Outputs: `results/fid10k/pairs.csv` (one FID per key, frame and configuration, and per baseline)
 and `results/fid10k/summary.csv`.
+
+Earlier versions compared our watermarked populations with uniform draws from the candidate
+bank. Recompute the 10K FID before comparing results under the independently generated control.
 
 ## 2. Same-prompt diversity (relative Vendi score)
 
