@@ -76,7 +76,7 @@ def main() -> int:
     from watermark.embedding import load_encoder
 
     pipeline = load_sdxl_pipeline(args.device)
-    images = [pipeline.final_and_preview(args.prompt, args.seed_base + index)[0] for index in range(GROUP_SIZE)]
+    images = [pipeline.generate(args.prompt, args.seed_base + index) for index in range(GROUP_SIZE)]
     del pipeline
     (args.output_dir / "images").mkdir(parents=True, exist_ok=True)
     for index, image in enumerate(images):

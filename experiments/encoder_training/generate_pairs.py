@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Generate the SDXL training sources: final images and fifth-step previews per (prompt, seed).
+"""Generate the SDXL training sources: one final image per (prompt, seed).
 
 Input ``--prompts`` is a JSONL file with one row per prompt::
 

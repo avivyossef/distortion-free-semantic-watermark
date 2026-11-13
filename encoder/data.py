@@ -1,20 +1,13 @@
 """Training pairs for the semantic encoder.
 
-Sources are SDXL images: for every (prompt, seed) a final image and the preview decoded
-from the fifth denoising step (see :mod:`encoder.sdxl`). Four pair types are balanced across
-optimizer updates, each update holding 16 pairs of one type:
+Each source is a final SDXL image. A positive pair combines a source with
+a transformed copy. A negative pair combines two sources from the same prompt
+generated with different seeds. Each optimizer update holds 16 pairs of one
+type, and the two types are balanced across updates.
 
-- ``attack_positive``: a final image and a transformed copy of it (one cell of the attack
-  registry, :mod:`encoder.attacks`);
-- ``preview_positive``: the fifth-step preview and the final image of the same seed;
-- ``final_seed_negative``: finals of two different seeds of the same prompt;
-- ``preview_seed_negative``: the preview of one seed and the final of another seed of the
-  same prompt.
-
-A source manifest is a JSONL file with one row per source image::
-
-    {"source_uid": "<prompt_uid>:seed_<seed:02d>", "prompt_uid", "prompt_split": "train" |
-     "validation", "seed", "final_path", "preview_path"}      # paths relative to the data root
+The source manifest contains one JSONL row per image with ``source_uid``,
+``prompt_uid``, ``prompt_split`` (train or validation), ``seed``, and ``final_path``
+(relative to the data root).
 """
 
 from __future__ import annotations
@@ -38,9 +31,7 @@ class LeakageError(ValueError):
 
 class PairKind(str, Enum):
     ATTACK_POSITIVE = "attack_positive"
-    PREVIEW_POSITIVE = "preview_positive"
     FINAL_SEED_NEGATIVE = "final_seed_negative"
-    PREVIEW_SEED_NEGATIVE = "preview_seed_negative"
 
 
 @dataclass(frozen=True)
@@ -60,7 +51,7 @@ class ImageIdentity:
     prompt_uid: str
     prompt_split: str
     seed: int
-    variant: str  # "final", "preview" or "attack"
+    variant: str  # "final" or "attack"
     path: Optional[str]  # relative to the data root; attacks are rendered from ``source_path``
     source_path: Optional[str] = None
     attack: Optional[AttackRef] = None
@@ -96,7 +87,6 @@ class SourceCorpus:
 
     data_root: Path
     finals: Tuple[ImageIdentity, ...]
-    previews: Tuple[ImageIdentity, ...]
     attacks: Tuple[ImageIdentity, ...]
 
     @classmethod
@@ -104,14 +94,13 @@ class SourceCorpus:
         if not rows:
             raise LeakageError("source manifest is empty")
         finals: List[ImageIdentity] = []
-        previews: List[ImageIdentity] = []
         attacks: List[ImageIdentity] = []
         seen = set()
         for row in rows:
             try:
                 source_uid, prompt_uid = str(row["source_uid"]), str(row["prompt_uid"])
                 prompt_split, seed = str(row["prompt_split"]), int(row["seed"])
-                final_path, preview_path = str(row["final_path"]), str(row["preview_path"])
+                final_path = str(row["final_path"])
             except (KeyError, TypeError, ValueError) as error:
                 raise LeakageError("source manifest row is missing a field") from error
             if source_uid != "%s:seed_%02d" % (prompt_uid, seed) or prompt_split not in {"train", "validation"}:
@@ -120,11 +109,10 @@ class SourceCorpus:
                 raise LeakageError("sources require seed >= 16")
             if source_uid in seen:
                 raise LeakageError("source manifest contains duplicate source identities")
-            if Path(final_path).is_absolute() or Path(preview_path).is_absolute():
+            if Path(final_path).is_absolute():
                 raise LeakageError("source paths must be relative to the data root")
             seen.add(source_uid)
             finals.append(ImageIdentity(source_uid, prompt_uid, prompt_split, seed, "final", final_path))
-            previews.append(ImageIdentity(source_uid, prompt_uid, prompt_split, seed, "preview", preview_path))
             for family in sorted(ATTACK_REGISTRY):
                 specification = ATTACK_REGISTRY[family]
                 for severity in sorted(specification.severities):
@@ -139,7 +127,6 @@ class SourceCorpus:
         return cls(
             data_root=Path(data_root).resolve(strict=False),
             finals=tuple(sorted(finals, key=lambda item: item.source_uid)),
-            previews=tuple(sorted(previews, key=lambda item: item.source_uid)),
             attacks=tuple(sorted(attacks, key=lambda item: item.attack.attack_uid if item.attack else "")),
         )
 
@@ -148,7 +135,6 @@ class SourceCorpus:
         return SourceCorpus(
             self.data_root,
             tuple(item for item in self.finals if item.prompt_uid == prompt_uid),
-            tuple(item for item in self.previews if item.prompt_uid == prompt_uid),
             tuple(item for item in self.attacks if item.prompt_uid == prompt_uid),
         )
 
@@ -176,7 +162,6 @@ def build_pair_records(
     if family_partition != prompt_split:
         raise LeakageError("prompt split and attack-family partition must match")
     finals = [item for item in corpus.finals if item.prompt_split == prompt_split]
-    previews = {item.source_uid: item for item in corpus.previews if item.prompt_split == prompt_split}
     attacks_by_source: Dict[str, List[ImageIdentity]] = defaultdict(list)
     for attack in corpus.attacks:
         if attack.prompt_split == prompt_split and attack.attack and attack.attack.family_partition == family_partition:
@@ -191,22 +176,14 @@ def build_pair_records(
         raise LeakageError("prompts must have equal eligible source counts")
     records: List[PairRecord] = []
     for final in finals:
-        preview = previews.get(final.source_uid)
         eligible = sorted(finals_by_prompt[final.prompt_uid], key=lambda item: item.seed)
-        if preview is None:
-            raise LeakageError("eligible clean source lacks its preview")
         if len(eligible) < 2:
             raise LeakageError("each eligible prompt requires at least two seeds")
         attacks = sorted(attacks_by_source[final.source_uid], key=lambda item: item.attack.attack_uid if item.attack else "")
         records.extend(PairRecord(PairKind.ATTACK_POSITIVE, final, attack, 1.0) for attack in attacks)
-        records.append(PairRecord(PairKind.PREVIEW_POSITIVE, preview, final, 1.0))
         records.append(PairRecord(
             PairKind.FINAL_SEED_NEGATIVE, final,
             _select_other(eligible, epoch=epoch, kind=PairKind.FINAL_SEED_NEGATIVE, source=final), 0.0,
-        ))
-        records.append(PairRecord(
-            PairKind.PREVIEW_SEED_NEGATIVE, preview,
-            _select_other(eligible, epoch=epoch, kind=PairKind.PREVIEW_SEED_NEGATIVE, source=final), 0.0,
         ))
     return tuple(records)
 
@@ -268,7 +245,7 @@ def _interleave_attack_cells(records: Sequence[PairRecord]) -> Tuple[PairRecord,
 
 
 class BalancedPairSampler:
-    """Four deterministic queues; every update has one kind and 16 pair records."""
+    """Two deterministic queues; every update has one kind and 16 pair records."""
 
     def __init__(self, records: Sequence[PairRecord], *, pairs_per_update: int = 16) -> None:
         if pairs_per_update != 16:
@@ -326,7 +303,7 @@ def randomized_balanced_updates(
 ) -> Tuple[ScheduledPairUpdate, ...]:
     """Randomize prompt/pair choice while retaining exact per-epoch coverage."""
     if updates_per_prompt <= 0 or updates_per_prompt % len(PairKind):
-        raise LeakageError("updates per prompt must be a positive multiple of the four pair kinds")
+        raise LeakageError("updates per prompt must be a positive multiple of the two pair kinds")
     if not samplers:
         raise LeakageError("randomized schedule requires at least one prompt sampler")
     prompt_uids = tuple(sorted(samplers))

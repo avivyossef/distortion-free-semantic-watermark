@@ -4,10 +4,9 @@
 ``--data-dir`` is the output of ``generate_pairs.py``. Training prompts use their first
 ``--seeds-per-prompt`` allocated seeds (re-run with ``--resume`` and a larger value for the
 8 -> 16 -> 32 -> 64 seed curriculum); validation prompts use their first ``--validation-seeds``.
-One epoch is four optimizer updates per training prompt, one of each pair type, of 16 pairs.
+One epoch is four optimizer updates per training prompt, two of each pair type, with 16 pairs per update.
 A checkpoint ``checkpoint-step-<updates>.pt`` is written after every ``--save-every-epochs``
-epochs together with validation metrics; the checkpoint at the target update count is the one
-to publish.
+epochs together with validation metrics.
 
     python experiments/encoder_training/train.py --data-dir data/sources \
         --output-dir runs/encoder --target-updates 19840
@@ -50,7 +49,7 @@ def main() -> int:
     parser.add_argument("--output-dir", type=Path, required=True)
     parser.add_argument("--target-updates", type=int, required=True)
     parser.add_argument("--seeds-per-prompt", type=int, default=64)
-    parser.add_argument("--validation-seeds", type=int, default=16)
+    parser.add_argument("--validation-seeds", type=int, default=64)
     parser.add_argument("--negative-cap", type=float, default=0.0,
                         help="negative-pair loss is max(0, cos - cap); the paper uses 0")
     parser.add_argument("--training-seed", type=int, default=20260814)

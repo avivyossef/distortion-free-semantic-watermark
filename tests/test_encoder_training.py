@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from dataclasses import replace
+
 import pytest
 import torch
 
@@ -50,10 +52,10 @@ def test_epoch_takes_one_step_per_batch_and_steps_the_scheduler_once():
             self.calls += 1
 
     scheduler = Recorder()
-    batches = [_same(kind) for kind in data.PairKind] * 2
+    batches = [_same(kind) for kind in data.PairKind] * 4
     result = training.train_one_epoch(model, batches, optimizer=optimizer, scheduler=scheduler)
     assert result.optimizer_steps == 8 and result.pair_count == 128 and scheduler.calls == 1
-    assert result.kind_counts == {kind.value: 2 for kind in data.PairKind}
+    assert result.kind_counts == {kind.value: 4 for kind in data.PairKind}
 
 
 def test_training_pulls_positives_together_and_pushes_negatives_apart():
@@ -79,13 +81,12 @@ def test_validation_selects_ordering_then_loss_and_flags_collapse():
     model = MeanMetric()
     one, two = _pixels([[1, 0, 0]]), _pixels([[0, 1, 0]])
     validation = training.ValidationData(
-        pair_batches=(_same(data.PairKind.PREVIEW_POSITIVE),),
-        preview_orderings=(training.OrderingExample(one, one, two),),
+        pair_batches=(_same(data.PairKind.ATTACK_POSITIVE),),
         attack_seed_orderings=(training.OrderingExample(one, one, two),),
         endpoint_batches=(training.EndpointBatch(_pixels([[1, 0, 0], [0, 1, 0], [0, 0, 1]]), (17, 18, 19), ("p",) * 3),),
     )
     result = training.validate_model(model, validation)
-    assert result.selection_key == (1.0, 1.0, -result.loss) and result.health.effective_rank >= 2
+    assert result.selection_key == (1.0, -result.loss) and result.health.effective_rank >= 2
     constant = ConstantMetric()
     collapsed = training.ValidationData(endpoint_batches=validation.endpoint_batches)
     first = training.validate_model(constant, collapsed)
@@ -108,7 +109,11 @@ def _setup(tmp_path):
     return rows, data.SourceCorpus.from_rows(rows, data_root=tmp_path)
 
 
-def test_run_training_writes_resumable_checkpoints(tmp_path):
+def test_run_training_writes_resumable_checkpoints(tmp_path, monkeypatch):
+    # Collapse handling is tested separately. The toy encoder can collapse on these fixtures.
+    validate = training.validate_model
+    monkeypatch.setattr(training, "validate_model",
+                        lambda *args, **kwargs: replace(validate(*args, **kwargs), stop_for_collapse=False))
     rows, corpus = _setup(tmp_path)
     out = tmp_path / "run"
     candidate = training.CandidateConfiguration("lora_mlp", 4)
@@ -116,11 +121,12 @@ def test_run_training_writes_resumable_checkpoints(tmp_path):
     summary = training.run_training(
         corpus=corpus, processor=FakeProcessor(), model=tiny_model(), device=torch.device("cpu"), output_dir=out,
         candidate=candidate, target_updates=16, data_manifest_sha256=training.manifest_sha256(rows), log=lambda _: None)
-    assert summary["global_update"] == 16 and len(summary["selection_key"]) == 3
+    assert summary["global_update"] == 16 and len(summary["selection_key"]) == 2
     files = sorted(p.name for p in out.glob("*.pt"))
     assert files == ["checkpoint-step-00000008.pt", "checkpoint-step-00000016.pt"]
     saved = training.load_checkpoint_file(out / files[-1])
     assert saved.global_update == 16 and saved.completed_epochs == 2 and len(saved.history) == 2
+    assert saved.history[-1]["sampler_observations"] == {"attack_positive": 4, "final_seed_negative": 4}
     assert saved.data_manifest_sha256 == training.manifest_sha256(rows)
     assert saved.config["lora_rank"] == 4 and set(saved.model_state) == set(tiny_model().trainable_state_dict())
     # Resume from the first epoch and reach the same state as the uninterrupted run.
