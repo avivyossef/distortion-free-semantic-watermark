@@ -7,7 +7,7 @@ Tel Aviv University
 
 Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · Encoder weights (coming soon)
 
-<img src="docs/assets/method.svg" alt="Watermarked generation with Gumbel selection, then detection from a set of images" width="100%">
+<img src="docs/assets/method.svg" alt="Select one image, then compare its watermark score with the detection threshold" width="100%">
 
 </div>
 
@@ -34,13 +34,16 @@ candidates, then returns a uniformly random candidate from that group.
 Averaged over keys and sampler randomness, each candidate is returned with
 probability 1/*N*.
 
-Detection uses the same encoder, hyperplanes, and secret key. The
-**boundary-aware detector** scores an image's code and also considers nearby
-codes when its embedding lies close to a hyperplane. We average the image
-scores over a batch of *B* images from one source and compare the average
-with a threshold calibrated on unwatermarked images. The experiments use
-this detector for both clean and edited images. Batch averaging addresses
-the limited evidence available from a single image.
+To detect the watermark, we turn the image into a code using the same encoder
+and hyperplanes as during selection. We then compute the code's score *F*(*c*)
+with the same secret key. If the image embedding is close to a hyperplane,
+the **boundary-aware detector** also checks nearby codes and uses the highest
+score it finds.
+
+For one image, we compare its score with a threshold calibrated on
+unwatermarked images. With a batch of *B* images from one source, we average
+their scores before comparing with a threshold calibrated for that batch size.
+The experiments use this detector on both unedited and edited images.
 
 The encoder must distinguish independent generations from the same prompt
 while keeping each image close to its edited versions. Standard semantic
