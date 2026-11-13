@@ -14,7 +14,7 @@
     .score { fill: #007c71; }
     .verdict { font-size: 22px; font-weight: 700; fill: #00625a; }
 
-    .group, .pick, .batch, .decision { animation-duration: 32s; animation-iteration-count: infinite; animation-timing-function: step-end; }
+    .group, .pick, .batch, .decision { animation-duration: 24s; animation-iteration-count: infinite; animation-timing-function: step-end; }
     .group { animation-name: reveal-group; }
     .pick { animation-name: reveal-pick; }
     .batch { animation-name: reveal-batch; }
