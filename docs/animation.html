@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Semantic watermark animation</title>
+  <link rel="stylesheet" href="project.css">
+  <style>
+    main { padding-block: 28px; }
+    h1 { margin-bottom: 18px; font-size: clamp(2rem, 5vw, 3.5rem); }
+    .controls { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-bottom: 14px; }
+    .controls button { background: transparent; }
+    .controls button:disabled { opacity: .45; }
+    object { display: block; width: 100%; aspect-ratio: 1000 / 660; }
+  </style>
+  <script defer src="animation.js"></script>
+</head>
+<body>
+  <main class="wrap">
+    <h1>Semantic watermark animation</h1>
+    <div class="controls" role="group" aria-label="Animation controls" hidden>
+      <button class="link-button" type="button" id="start">Start over</button>
+      <button class="link-button" type="button" id="back">Back</button>
+      <button class="link-button" type="button" id="next">Next</button>
+      <output id="step-status" aria-live="polite"></output>
+    </div>
+    <object id="animation" type="image/svg+xml" data="assets/method.svg" aria-label="Semantic watermark selection and detection">
+      <img src="assets/method.svg" alt="Semantic watermark selection and detection" style="width: 100%">
+    </object>
+  </main>
+</body>
+</html>

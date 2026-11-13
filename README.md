@@ -9,6 +9,8 @@ Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-fr
 
 <img src="docs/assets/method.svg" alt="Select one image, then compare its watermark score with the detection threshold" width="100%">
 
+[Step through the animation](https://avivyossef.github.io/distortion-free-semantic-watermark/animation.html)
+
 </div>
 
 This repository implements semantic watermarking by selecting among outputs
