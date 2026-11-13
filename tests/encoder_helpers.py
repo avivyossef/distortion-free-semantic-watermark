@@ -61,7 +61,7 @@ class FakeProcessor:
 
 
 def write_sources(root, prompts, seeds_per_prompt: int, *, size: int = 32, split_of=None):
-    """Write synthetic final/preview PNGs and return their manifest rows."""
+    """Write synthetic final PNGs and return their manifest rows."""
     rng = np.random.default_rng(0)
     rows = []
     seed = 16
@@ -69,14 +69,11 @@ def write_sources(root, prompts, seeds_per_prompt: int, *, size: int = 32, split
         split = split_of(prompt_uid) if split_of else "train"
         for _ in range(seeds_per_prompt):
             final = Path(root) / prompt_uid / "final" / ("seed_%02d.png" % seed)
-            preview = Path(root) / prompt_uid / "previews" / ("seed_%02d.png" % seed)
-            for path in (final, preview):
-                path.parent.mkdir(parents=True, exist_ok=True)
-                Image.fromarray(rng.integers(0, 256, size=(size, size, 3), dtype=np.uint8)).save(path)
+            final.parent.mkdir(parents=True, exist_ok=True)
+            Image.fromarray(rng.integers(0, 256, size=(size, size, 3), dtype=np.uint8)).save(final)
             rows.append({
                 "source_uid": "%s:seed_%02d" % (prompt_uid, seed), "prompt_uid": prompt_uid, "prompt_split": split,
                 "seed": seed, "final_path": final.relative_to(root).as_posix(),
-                "preview_path": preview.relative_to(root).as_posix(),
             })
             seed += 1
     return rows

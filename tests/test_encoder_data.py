@@ -45,9 +45,9 @@ def test_render_attack_rejects_parameters_that_differ_from_the_registry():
         attacks.render_attack(Image.new("RGB", (8, 8)), forged)
 
 
-def test_corpus_builds_one_final_preview_and_all_attack_cells_per_source(tmp_path):
+def test_corpus_builds_one_final_and_all_attack_cells_per_source(tmp_path):
     corpus = data.SourceCorpus.from_rows(_rows(tmp_path), data_root=tmp_path)
-    assert len(corpus.finals) == len(corpus.previews) == 6
+    assert len(corpus.finals) == 6
     assert len(corpus.attacks) == 6 * 24  # 8 families x 3 severities
     assert {item.attack.family_partition for item in corpus.attacks} == {"train", "validation"}
 
@@ -67,19 +67,21 @@ def test_corpus_rejects_malformed_rows(tmp_path, mutate):
         data.SourceCorpus.from_rows([], data_root=tmp_path)
 
 
-def test_pair_records_cover_the_four_types_for_every_source(tmp_path):
-    corpus = data.SourceCorpus.from_rows(_rows(tmp_path), data_root=tmp_path)
+def test_pair_records_cover_only_the_two_paper_types_for_every_source(tmp_path):
+    rows = _rows(tmp_path)
+    rows[0]["preview_path"] = "unused-legacy-preview.png"
+    corpus = data.SourceCorpus.from_rows(rows, data_root=tmp_path)
     records = data.build_pair_records(corpus, prompt_split="train", family_partition="train")
     counts = Counter(record.kind for record in records)
-    assert counts[data.PairKind.ATTACK_POSITIVE] == 6 * 18
-    assert all(counts[kind] == 6 for kind in (data.PairKind.PREVIEW_POSITIVE, data.PairKind.FINAL_SEED_NEGATIVE,
-                                              data.PairKind.PREVIEW_SEED_NEGATIVE))
+    assert counts == {data.PairKind.ATTACK_POSITIVE: 6 * 18, data.PairKind.FINAL_SEED_NEGATIVE: 6}
     for record in records:
         assert record.target_similarity == (1.0 if "positive" in record.kind.value else 0.0)
         if "negative" in record.kind.value:
+            assert record.left.variant == record.right.variant == "final"
             assert record.left.prompt_uid == record.right.prompt_uid and record.left.seed != record.right.seed
         else:
-            assert record.left.seed == record.right.seed
+            assert record.left.variant == "final" and record.right.variant == "attack"
+            assert record.left.source_uid == record.right.source_uid
     assert {r.right.attack.family_partition for r in records if r.right.attack} == {"train"}
     with pytest.raises(data.LeakageError):
         data.build_pair_records(corpus, prompt_split="train", family_partition="validation")
@@ -97,7 +99,7 @@ def test_sampler_updates_hold_sixteen_pairs_of_one_kind_and_are_reproducible(tmp
     corpus = data.SourceCorpus.from_rows(_rows(tmp_path), data_root=tmp_path)
     sampler = data.BalancedPairSampler(data.build_pair_records(corpus, prompt_split="train", family_partition="train"))
     updates = list(sampler.iter_updates(epoch=0, update_count=8))
-    assert Counter(update.kind for update in updates) == {kind: 2 for kind in data.PairKind}
+    assert Counter(update.kind for update in updates) == {kind: 4 for kind in data.PairKind}
     assert all(len(update.records) == 16 and {r.kind for r in update.records} == {update.kind} for update in updates)
     again = list(sampler.iter_updates(epoch=0, update_count=8))
     assert [u.records for u in updates] == [u.records for u in again]
@@ -106,7 +108,7 @@ def test_sampler_updates_hold_sixteen_pairs_of_one_kind_and_are_reproducible(tmp
     with pytest.raises(data.LeakageError):
         data.BalancedPairSampler([], pairs_per_update=16)
     with pytest.raises(data.LeakageError):
-        data.BalancedPairSampler(sampler._queues[data.PairKind.PREVIEW_POSITIVE], pairs_per_update=8)
+        data.BalancedPairSampler(sampler._queues[data.PairKind.ATTACK_POSITIVE], pairs_per_update=8)
 
 
 def test_global_schedule_balances_prompts_and_kinds(tmp_path):
@@ -116,7 +118,7 @@ def test_global_schedule_balances_prompts_and_kinds(tmp_path):
     schedule = data.randomized_balanced_updates(samplers, epoch=2, training_seed=5, updates_per_prompt=4)
     assert len(schedule) == 12
     assert Counter(item.prompt_uid for item in schedule) == {"a": 4, "b": 4, "c": 4}
-    assert Counter(item.update.kind for item in schedule) == {kind: 3 for kind in data.PairKind}
+    assert Counter(item.update.kind for item in schedule) == {kind: 6 for kind in data.PairKind}
     assert all(r.left.prompt_uid == item.prompt_uid for item in schedule for r in item.update.records)
     assert [i.update for i in schedule] == [i.update for i in data.randomized_balanced_updates(
         samplers, epoch=2, training_seed=5, updates_per_prompt=4)]
@@ -153,3 +155,23 @@ def test_seed_allocation_is_disjoint_reproducible_and_prefix_stable():
     assert sdxl.source_uid("p0", 16) == "p0:seed_16"
     with pytest.raises(ValueError):
         sdxl.allocate_seeds(["a", "a"], registry_seed=1)
+
+
+def test_sdxl_shard_writes_only_final_images_and_reuses_them(tmp_path):
+    class Generator:
+        calls = []
+
+        def generate(self, prompt, seed):
+            self.calls.append((prompt, seed))
+            return Image.new("RGB", (8, 8), "red")
+
+    generator = Generator()
+    settings = dict(prompt_uid="p", prompt_split="train", text="a red image", seeds=[16], output_dir=tmp_path)
+    rows = sdxl.write_prompt_shard(generator, **settings)
+    assert rows == [{
+        "source_uid": "p:seed_16", "prompt_uid": "p", "prompt_split": "train", "seed": 16,
+        "final_path": "p/final/seed_16.png",
+    }]
+    assert list(tmp_path.rglob("*.png")) == [tmp_path / rows[0]["final_path"]]
+    assert sdxl.write_prompt_shard(generator, **settings) == rows
+    assert generator.calls == [("a red image", 16)]

@@ -122,7 +122,6 @@ class OrderingExample:
 @dataclass(frozen=True)
 class ValidationData:
     pair_batches: Tuple[PairTensorBatch, ...] = ()
-    preview_orderings: Tuple[OrderingExample, ...] = ()
     attack_seed_orderings: Tuple[OrderingExample, ...] = ()
     endpoint_batches: Tuple[EndpointBatch, ...] = ()
 
@@ -135,8 +134,6 @@ class EmbeddingHealth:
     effective_rank: float
     same_prompt_different_seed_final_cosine_mean: float
     same_prompt_different_seed_final_cosine_median: float
-    preview_same_seed_final_cosine_mean: float
-    preview_same_seed_final_cosine_median: float
     attack_final_cosine_mean: float
     attack_final_cosine_median: float
     collapsed: bool
@@ -145,18 +142,15 @@ class EmbeddingHealth:
 @dataclass(frozen=True)
 class ValidationResult:
     loss: float
-    preview_ordering_accuracy: float
     attack_seed_ordering_accuracy: float
     health: EmbeddingHealth
-    recall_at_1: float
-    mrr: float
     consecutive_collapse_epochs: int
     stop_for_collapse: bool
 
     @property
-    def selection_key(self) -> Tuple[float, float, float]:
+    def selection_key(self) -> Tuple[float, float]:
         """Maximize validation orderings, then minimize validation-only loss."""
-        return (self.preview_ordering_accuracy, self.attack_seed_ordering_accuracy, -self.loss)
+        return (self.attack_seed_ordering_accuracy, -self.loss)
 
 
 @dataclass(frozen=True)
@@ -173,7 +167,7 @@ def _device_of(model: nn.Module) -> torch.device:
 
 
 def _positive(kind: PairKind) -> bool:
-    return kind in {PairKind.ATTACK_POSITIVE, PairKind.PREVIEW_POSITIVE}
+    return kind is PairKind.ATTACK_POSITIVE
 
 
 def _cosines(model: nn.Module, left: Tensor, right: Tensor) -> Tensor:
@@ -249,7 +243,6 @@ def embedding_health(
     target_device = device or _device_of(model)
     embeddings: List[Tensor] = []
     final_endpoints: List[Tuple[str, int, Tensor]] = []
-    preview_endpoints: List[Tuple[str, int, Tensor]] = []
     attack_endpoints: List[Tuple[str, int, Tensor]] = []
     was_training = model.training
     model.eval()
@@ -264,14 +257,12 @@ def embedding_health(
                     endpoint = (prompt_uid, seed, vector)
                     if variant == "final":
                         final_endpoints.append(endpoint)
-                    elif variant == "preview":
-                        preview_endpoints.append(endpoint)
                     elif variant == "attack":
                         attack_endpoints.append(endpoint)
     finally:
         model.train(was_training)
     if not embeddings:
-        return EmbeddingHealth(0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, True)
+        return EmbeddingHealth(0.0, 0.0, 0.0, 0.0, 1.0, 1.0, 1.0, 1.0, True)
     values = torch.cat(embeddings, dim=0)
     std = values.std(dim=0, unbiased=False)
     if values.shape[0] < 2:
@@ -292,59 +283,19 @@ def embedding_health(
         if prompt_uid == other_prompt_uid and seed != other_seed
     ]
     final_by_identity = {(prompt_uid, seed): vector for prompt_uid, seed, vector in final_endpoints}
-    preview_same_seed = [
-        float(F.cosine_similarity(vector[None], final_by_identity[(prompt_uid, seed)][None]).item())
-        for prompt_uid, seed, vector in preview_endpoints
-        if (prompt_uid, seed) in final_by_identity
-    ]
     attack_final = [
         float(F.cosine_similarity(vector[None], final_by_identity[(prompt_uid, seed)][None]).item())
         for prompt_uid, seed, vector in attack_endpoints
         if (prompt_uid, seed) in final_by_identity
     ]
     same_prompt_mean, same_prompt_median = _cosine_summary(same_prompt_different_seed)
-    preview_mean, preview_median = _cosine_summary(preview_same_seed)
     attack_mean, attack_median = _cosine_summary(attack_final)
     collapsed = effective_rank < 2.0 or same_prompt_median > 0.99
     return EmbeddingHealth(
         float(std.mean()), float(std.min()), float(std.max()), effective_rank,
-        same_prompt_mean, same_prompt_median, preview_mean, preview_median,
+        same_prompt_mean, same_prompt_median,
         attack_mean, attack_median, collapsed,
     )
-
-
-def _validation_retrieval(
-    model: nn.Module, endpoint_batches: Sequence[EndpointBatch], *, device: torch.device
-) -> Tuple[float, float]:
-    finals: Dict[Tuple[str, int], Tensor] = {}
-    previews: Dict[Tuple[str, int], Tensor] = {}
-    with torch.inference_mode():
-        for batch in endpoint_batches:
-            batch.validate()
-            variants = batch.variants or ("final",) * len(batch.seeds)
-            wanted = [index for index, variant in enumerate(variants) if variant in {"final", "preview"}]
-            if not wanted:
-                continue
-            vectors = F.normalize(model(pixel_values=batch.pixel_values[wanted].to(device)), dim=1).detach().float().cpu()
-            for index, vector in zip(wanted, vectors):
-                key = (batch.prompt_uids[index], batch.seeds[index])
-                (finals if variants[index] == "final" else previews)[key] = vector
-    reciprocal_ranks: List[float] = []
-    recalled = 0
-    for key, preview in previews.items():
-        own = finals.get(key)
-        others = [vector for candidate_key, vector in finals.items() if candidate_key[0] == key[0] and candidate_key != key]
-        if own is None or not others:
-            continue
-        own_score = float(F.cosine_similarity(preview[None], own[None]).item())
-        rank = 1 + sum(
-            float(F.cosine_similarity(preview[None], candidate[None]).item()) >= own_score for candidate in others
-        )
-        recalled += int(rank == 1)
-        reciprocal_ranks.append(1.0 / rank)
-    if not reciprocal_ranks:
-        return 0.0, 0.0
-    return recalled / len(reciprocal_ranks), sum(reciprocal_ranks) / len(reciprocal_ranks)
 
 
 @torch.no_grad()
@@ -364,13 +315,11 @@ def validate_model(
             positive=_positive(batch.kind), negative_cap=negative_cap,
         ).cpu()))
     health = embedding_health(model, validation.endpoint_batches, device=device)
-    recall_at_1, mrr = _validation_retrieval(model, validation.endpoint_batches, device=device)
     consecutive = prior_consecutive_collapse_epochs + 1 if health.collapsed else 0
     result = ValidationResult(
         loss=sum(losses) / len(losses) if losses else 0.0,
-        preview_ordering_accuracy=_ordering_accuracy(model, validation.preview_orderings, device),
         attack_seed_ordering_accuracy=_ordering_accuracy(model, validation.attack_seed_orderings, device),
-        health=health, recall_at_1=recall_at_1, mrr=mrr,
+        health=health,
         consecutive_collapse_epochs=consecutive, stop_for_collapse=consecutive >= 2,
     )
     model.train(was_training)
@@ -525,8 +474,8 @@ def build_validation_data(
 ) -> ValidationData:
     """Validation tensors from every validation source of the corpus.
 
-    Pair batches use the validation attack families; orderings test that a preview or an
-    attacked copy of a final image is closer to it than a final of another seed.
+    Pair batches use the validation transformation families. The ordering metric checks
+    whether a transformed image is closer to its source than a different-seed generation.
     """
     prompts = sorted({item.prompt_uid for item in corpus.finals if item.prompt_split == "validation"})
     if not prompts:
@@ -550,33 +499,29 @@ def build_validation_data(
         return cache[key]
 
     endpoints: List[Tuple[Tensor, str, int, str]] = []
-    preview_examples: List[OrderingExample] = []
     attack_examples: List[OrderingExample] = []
     for prompt_uid in prompts:
         prompt_corpus = corpus.for_prompt(prompt_uid)
         finals = list(prompt_corpus.finals)
-        previews = {item.source_uid: item for item in prompt_corpus.previews}
         attacks: Dict[str, List[Any]] = {}
         for item in prompt_corpus.attacks:
             if item.attack.family_partition == "validation":
                 attacks.setdefault(item.source_uid, []).append(item)
         for final in finals:
             endpoints.append((tensor_of(final), prompt_uid, final.seed, "final"))
-            endpoints.append((tensor_of(previews[final.source_uid]), prompt_uid, final.seed, "preview"))
             for attack in attacks[final.source_uid]:
                 endpoints.append((tensor_of(attack), prompt_uid, final.seed, "attack"))
         for final in finals:
             other = next(item for item in finals if item.seed != final.seed)
             anchor, negative = tensor_of(final), tensor_of(other)
-            preview_examples.append(OrderingExample(anchor, tensor_of(previews[final.source_uid]), negative))
             for attack in attacks[final.source_uid]:
                 attack_examples.append(OrderingExample(anchor, tensor_of(attack), negative))
-    pixels = torch.cat([item[0] for item in endpoints], dim=0)
-    return ValidationData(
-        tuple(batches), tuple(preview_examples), tuple(attack_examples),
-        (EndpointBatch(pixels, tuple(item[2] for item in endpoints), tuple(item[1] for item in endpoints),
-                       tuple(item[3] for item in endpoints)),),
-    )
+    endpoint_batches = []
+    for start in range(0, len(endpoints), 32):
+        chunk = endpoints[start:start + 32]
+        pixels, prompt_uids, seeds, variants = zip(*chunk)
+        endpoint_batches.append(EndpointBatch(torch.cat(pixels, dim=0), seeds, prompt_uids, variants))
+    return ValidationData(tuple(batches), tuple(attack_examples), tuple(endpoint_batches))
 
 
 def manifest_sha256(rows: Sequence[Mapping[str, Any]]) -> str:
@@ -594,7 +539,7 @@ def run_training(
 ) -> Dict[str, Any]:
     """Train ``model`` until ``target_updates`` optimizer updates (a whole number of epochs).
 
-    One epoch is ``4 * prompts`` updates (four per training prompt, one of each pair type).
+    One epoch is ``4 * prompts`` updates (four per training prompt, two of each pair type).
     After each epoch (or every ``save_every_epochs``) a checkpoint
     ``checkpoint-step-<updates>.pt`` is written to ``output_dir``, with validation metrics in
     ``history``. Returns the final validation result as a dict.
@@ -609,6 +554,8 @@ def run_training(
     global_update = completed_epochs = 0
     if resume is not None:
         loaded = load_checkpoint_file(resume)
+        if any("preview_ordering_accuracy" in epoch for epoch in loaded.history):
+            raise ResumeProvenanceError("start a new run for the paper's two-pair training recipe")
         restore_checkpoint(loaded, model=model, optimizer=optimizer, scheduler=scheduler)
         history, global_update, completed_epochs = list(loaded.history), loaded.global_update, loaded.completed_epochs
     prompts = sorted({item.prompt_uid for item in corpus.finals if item.prompt_split == "train"})
@@ -633,9 +580,8 @@ def run_training(
             "epoch": completed_epochs - 1, "global_update": global_update, "loss": trained.loss,
             "sampler_observations": dict(trained.kind_counts),
             "embedding_health": asdict(result.health),
-            "preview_ordering_accuracy": result.preview_ordering_accuracy,
             "attack_seed_ordering_accuracy": result.attack_seed_ordering_accuracy,
-            "recall_at_1": result.recall_at_1, "mrr": result.mrr, "validation_loss": result.loss,
+            "validation_loss": result.loss,
             "consecutive_collapse_epochs": result.consecutive_collapse_epochs,
         })
         if completed_epochs % save_every_epochs == 0 or global_update == target_updates:
@@ -643,8 +589,8 @@ def run_training(
                 model=model, optimizer=optimizer, scheduler=scheduler, history=history, global_update=global_update,
                 completed_epochs=completed_epochs, data_manifest_sha256=data_manifest_sha256,
             ).save(Path(output_dir) / ("checkpoint-step-%08d.pt" % global_update))
-        log("epoch %d  updates %d  loss %.4f  validation preview/attack ordering %.3f/%.3f  (%.0fs)" % (
-            completed_epochs, global_update, trained.loss, result.preview_ordering_accuracy,
+        log("epoch %d  updates %d  loss %.4f  validation transformation ordering %.3f  (%.0fs)" % (
+            completed_epochs, global_update, trained.loss,
             result.attack_seed_ordering_accuracy, time.monotonic() - started))
         if result.stop_for_collapse:
             raise RuntimeError("collapse alarm fired: embeddings are collapsed on two consecutive epochs")

@@ -103,6 +103,9 @@ encoder. The paper's detector settings are in `configs/detection.yaml`.
 Each directory under `experiments/` covers one part of the paper; its README
 lists the inputs and exact commands. Outputs and measured results vary
 across reruns with fresh keys.
+For the reported experiments, use the pinned encoder checkpoint. The
+[encoder training guide](experiments/encoder_training) documents the paper's
+training recipe and the provenance of those weights.
 
 | Paper | Code |
 |---|---|
