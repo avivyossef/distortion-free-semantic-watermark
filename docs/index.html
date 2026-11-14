@@ -26,6 +26,7 @@
 
   <main id="main">
     <section class="hero wrap" aria-labelledby="project-title">
+      <div class="hero-text">
       <h1 id="project-title">Distortion-Free Semantic Watermarks for Black-Box Generative Models</h1>
       <p class="lede">Ask the model for several images and let a secret key choose which one to return. The result is an ordinary sample from the model, untouched. The key holder can still detect the choice later, even after edits that keep what the image shows.</p>
       <div class="byline">
@@ -35,6 +36,18 @@
           <span>Paper and encoder weights coming soon</span>
         </div>
       </div>
+      </div>
+      <figure class="teaser" aria-label="Six samples of one prompt, with the one chosen by the key outlined">
+        <div class="teaser-grid">
+          <img src="assets/lab/sdxl-1-0.webp" alt="" width="176" height="176">
+          <img src="assets/lab/sdxl-1-1.webp" alt="" width="176" height="176">
+          <img class="picked" src="assets/lab/sdxl-1-2.webp" alt="" width="176" height="176">
+          <img src="assets/lab/sdxl-1-3.webp" alt="" width="176" height="176">
+          <img src="assets/lab/sdxl-1-4.webp" alt="" width="176" height="176">
+          <img src="assets/lab/sdxl-1-5.webp" alt="" width="176" height="176">
+        </div>
+        <figcaption>Six ordinary samples of one prompt. The secret key chose the outlined one. <a href="#how">See how</a></figcaption>
+      </figure>
     </section>
 
     <section class="story wrap" id="how" aria-labelledby="how-title">
@@ -123,6 +136,7 @@
             <canvas id="regions" width="1000" height="800" aria-hidden="true"></canvas>
             <svg id="lines" viewBox="0 0 500 400" aria-hidden="true"></svg>
             <div id="tiles"></div>
+            <svg id="dots" viewBox="0 0 500 400" aria-hidden="true"></svg>
             <div id="overlay"></div>
           </div>
           <p class="stage-caption" id="stage-caption" aria-live="polite"></p>

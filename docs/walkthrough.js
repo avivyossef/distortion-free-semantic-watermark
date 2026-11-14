@@ -124,6 +124,7 @@ const board = $("board");
 const tilesLayer = $("tiles");
 const overlay = $("overlay");
 const lines = $("lines");
+const dots = $("dots");
 const regions = $("regions");
 const caption = $("stage-caption");
 const tiles = Array.from({ length: 6 }, () => {
@@ -148,12 +149,17 @@ function setTile(tile, { x, y, s, o = 1, label = "", color = "", winner = false 
   cap.style.background = color;
 }
 
-function svg(tag, attrs) {
+function svg(tag, attrs, layer = lines) {
   const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
   for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  lines.append(n);
+  layer.append(n);
   return n;
 }
+// True embedding positions sit above the thumbnails so they are never hidden.
+const dot = (p, fill) => svg("circle", { cx: p.x, cy: p.y, r: 5.5, fill, stroke: "#fff", "stroke-width": 2 }, dots);
+const leader = (p) => {
+  if (p.x !== p.anchor.x || p.y !== p.anchor.y) svg("line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#14161b", "stroke-width": 1.2 });
+};
 
 function drawCircle(withLines) {
   svg("circle", { cx: V.cx, cy: V.cy, r: V.r, fill: withLines ? "none" : "#fff", stroke: "#c9d0db", "stroke-width": 1 });
@@ -206,6 +212,7 @@ function render() {
     img.alt = `${state.prompt.text}, candidate ${i + 1}`;
   });
   lines.replaceChildren();
+  dots.replaceChildren();
   overlay.replaceChildren();
   regions.style.opacity = step === 2 ? 1 : 0;
   board.classList.toggle("is-detect", step === 6);
@@ -223,28 +230,26 @@ function viewGrid({ images }) {
 
 function viewPlot({ images }) {
   drawCircle(false);
-  const spots = placeOnPlot(images, 62);
+  const spots = placeOnPlot(images, 54);
   spots.forEach((p, i) => {
-    if (p.x !== p.anchor.x || p.y !== p.anchor.y) {
-      svg("line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#9aa3b2", "stroke-width": 1 });
-    }
-    svg("circle", { cx: p.anchor.x, cy: p.anchor.y, r: 3, fill: "#14161b" });
-    setTile(tiles[i], { x: p.x, y: p.y, s: 62 });
+    leader(p);
+    dot(p.anchor, "#14161b");
+    setTile(tiles[i], { x: p.x, y: p.y, s: 54 });
   });
-  caption.textContent = "Each dot is one image's embedding. Nearby dots are images the encoder sees as similar.";
+  caption.textContent = "Each dot is one image's embedding, linked to its thumbnail. Nearby dots are images the encoder sees as similar.";
 }
 
 function viewCodes({ images, groups, colors }) {
   paintRegions(colors);
   drawCircle(true);
-  const spots = placeOnPlot(images, 56);
+  const spots = placeOnPlot(images, 46);
   spots.forEach((p, i) => {
-    svg("circle", { cx: p.anchor.x, cy: p.anchor.y, r: 3, fill: "#14161b" });
-    if (p.x !== p.anchor.x || p.y !== p.anchor.y) svg("line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#9aa3b2", "stroke-width": 1 });
     const code = codeOf(images[i]);
-    setTile(tiles[i], { x: p.x, y: p.y, s: 56, label: code, color: colors.get(code) });
+    leader(p);
+    dot(p.anchor, colors.get(code));
+    setTile(tiles[i], { x: p.x, y: p.y, s: 46, label: code, color: colors.get(code) });
   });
-  caption.innerHTML = `<strong>${state.planes} lines</strong> cut the plot into ${2 * state.planes} regions, each with its own code. These six images fall into <strong>${groups.length}</strong> of them.` +
+  caption.innerHTML = `<strong>${state.planes} lines</strong> cut the plot into ${2 * state.planes} regions, each with its own code. The dots fall into <strong>${groups.length}</strong> of them; the thumbnail label shows its dot's code.` +
     (groups.length === 1 ? " Redraw the lines to split them up." : "");
 }
 
@@ -287,8 +292,8 @@ function viewPick({ images, pick, colors }) {
   const label = ov("ov-label", V.cx, 266);
   const chip = el("span", "chip");
   chip.style.background = colors.get(pick.winner.code);
-  label.append(chip, " ", el("strong", "", `Returned: #${pick.image.index + 1}`), ` · code ${pick.winner.code}`);
-  $("race-values").textContent = pick.rows.map((r) => `${r.code}: log(${r.score.toFixed(2)}) / ${r.members.length} = ${r.value.toFixed(2)}`).join("\n");
+  label.append(chip, " ", el("strong", "", "Returned image"), ` · code ${pick.winner.code}`);
+  $("race-values").textContent = pick.rows.map((r) => `${r.code}: log(${r.score.toFixed(2)}) / ${r.members.length} = ${r.value.toFixed(3)}`).join("\n") + `\nHighest wins: ${pick.winner.code}`;
   $("race-values").style.whiteSpace = "pre-line";
   const size = pick.winner.members.length;
   caption.innerHTML = `Code <strong>${pick.winner.code}</strong> wins the race` +
@@ -298,12 +303,12 @@ function viewPick({ images, pick, colors }) {
 
 function viewFair({ images }) {
   const s = 62;
-  const base = 350;
-  const maxH = 210;
+  const base = 352;
+  const maxH = 230;
   const total = Math.max(1, state.runs);
   images.forEach((_, i) => {
     const x = V.cx + (i - 2.5) * 74;
-    setTile(tiles[i], { x, y: 62, s });
+    setTile(tiles[i], { x, y: 74, s });
     const share = state.tally[i] / total;
     const bar = ov("ov-tally", x, base, 30);
     bar.style.top = "auto";
@@ -312,10 +317,9 @@ function viewFair({ images }) {
     ov("ov-pct", x, base + 8).textContent = state.runs ? `${Math.round(share * 100)}%` : "";
   });
   const expectY = base - (1 / 6 / 0.3) * maxH;
-  const line = ov("ov-expect", 36, expectY, V.w - 72);
-  line.append(el("span", "", "fair share, 1 in 6"));
+  const line = ov("ov-expect", 20, expectY, V.w - 40);
   caption.innerHTML = state.runs
-    ? `<strong>${state.runs.toLocaleString()} random keys.</strong> Each candidate was returned about one time in six.`
+    ? `<strong>${state.runs.toLocaleString()} random keys.</strong> Each candidate was returned about one time in six, the dashed line.`
     : "Running random keys…";
 }
 
