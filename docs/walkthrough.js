@@ -1,30 +1,27 @@
-// Scroll-driven walkthrough. The steps on the left set state.step; the stage on the right
-// re-lays out the same six candidate tiles for each step.
+// Two scroll-driven walkthroughs: watermarking (five steps) and detection (three steps).
+// Steps on the left pick the view; the stage on the right redraws for that view.
 const $ = (id) => document.getElementById(id);
 const IMG = "assets/lab/";
 const V = { w: 500, h: 400, cx: 250, cy: 200, r: 176 };
 const CODE_COLORS = ["#2f6fdf", "#e0702b", "#14937a", "#c23d8a", "#7a5bd6", "#a8820f"];
 const MARGIN = 0.045;
-const CUTOFF_QUANTILE = 0.9;
-const reduced = matchMedia("(prefers-reduced-motion: reduce)");
+const DETECT_P = 0.1;
 
 const rand32 = () => crypto.getRandomValues(new Uint32Array(1))[0];
 const state = {
   prompt: labPrompts[0], model: "sd21", planes: 2, angles: [],
-  key: rand32(), seed: rand32(), cleanSeed: rand32(),
-  step: 0, tally: [0, 0, 0, 0, 0, 0], runs: 0,
+  key: rand32(), seed: rand32(), plainSeed: rand32(), check: "marked",
 };
-let tallyTimer = 0;
 
-// ---------- Method (same rules as the PR's walkthrough) ----------
+// ---------- Method ----------
 function uniform(seed, salt) {
   let bits = (seed ^ salt) >>> 0;
   bits = Math.imul(bits ^ (bits >>> 16), 0x21f0aaad);
   bits = Math.imul(bits ^ (bits >>> 15), 0x735a2d97);
   return ((bits ^ (bits >>> 15)) >>> 0) / 4294967296 + 0.5 / 4294967296;
 }
-const scoreOf = (key, code) => uniform(key, 0x202a + parseInt(code, 2));
-const imagesOf = (prompt = state.prompt) => prompt.images[state.model].map((image, index) => ({ ...image, index }));
+const scoreOf = (code) => uniform(state.key, 0x202a + parseInt(code, 2));
+const imagesOf = () => state.prompt.images[state.model].map((image, index) => ({ ...image, index }));
 const marginsOf = (image) => state.angles.map((a) => image.x * Math.cos(a) + image.y * Math.sin(a));
 const codeOf = (image) => marginsOf(image).map((m) => (m >= 0 ? "1" : "0")).join("");
 
@@ -38,36 +35,24 @@ function groupsOf(images) {
   return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([code, members]) => ({ code, members }));
 }
 
-function race(groups, key, seed, promptId) {
-  const rows = groups.map((g) => {
-    const score = scoreOf(key, g.code);
-    return { ...g, score, value: Math.log(score) / g.members.length };
-  });
+function race(groups) {
+  const rows = groups.map((g) => ({ ...g, score: scoreOf(g.code), value: Math.log(scoreOf(g.code)) / g.members.length }));
   const best = Math.max(...rows.map((r) => r.value));
   const tied = rows.filter((r) => r.value === best);
-  const winner = tied[Math.floor(uniform(seed, 0x54100 + promptId) * tied.length)];
-  const image = winner.members[Math.floor(uniform(seed, 0x7ae00 + promptId) * winner.members.length)];
+  const winner = tied[Math.floor(uniform(state.seed, 0x54100 + state.prompt.id) * tied.length)];
+  const image = winner.members[Math.floor(uniform(state.seed, 0x7ae00 + state.prompt.id) * winner.members.length)];
   return { rows, winner, image };
 }
 
-function detectScore(image, key) {
+function detect(image) {
   const code = codeOf(image);
   const codes = [code];
   marginsOf(image).forEach((m, i) => {
     if (Math.abs(m) < MARGIN) codes.push(code.slice(0, i) + (code[i] === "0" ? "1" : "0") + code.slice(i + 1));
   });
-  return Math.max(...codes.map((c) => scoreOf(key, c)));
-}
-
-function cutoff(prompts, key) {
-  // Exact clean distribution of the batch average when each image is a uniform candidate.
-  let sums = [0];
-  for (const prompt of prompts) {
-    const scores = imagesOf(prompt).map((image) => detectScore(image, key));
-    sums = sums.flatMap((s) => scores.map((x) => s + x));
-  }
-  sums.sort((a, b) => a - b);
-  return sums[Math.floor(CUTOFF_QUANTILE * sums.length)] / prompts.length;
+  const score = Math.max(...codes.map(scoreOf));
+  // Without the watermark each region's score is uniform, so P(max of k scores > s) = 1 - s^k.
+  return { code, codes, score, p: 1 - score ** codes.length };
 }
 
 function drawPlanes() {
@@ -79,7 +64,7 @@ function drawPlanes() {
   });
 }
 
-// ---------- Helpers ----------
+// ---------- Drawing helpers ----------
 const el = (tag, cls, text) => {
   const n = document.createElement(tag);
   if (cls) n.className = cls;
@@ -90,10 +75,93 @@ const pctX = (x) => `${(x / V.w) * 100}%`;
 const pctY = (y) => `${(y / V.h) * 100}%`;
 const hex = (key) => `0x${key.toString(16).padStart(8, "0")}`;
 const toBoard = (image) => ({ x: V.cx + V.r * image.x * 0.92, y: V.cy - V.r * image.y * 0.92 });
+const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+const modelSelect = $("model");
+const modelName = () => modelSelect.selectedOptions[0].textContent;
+const colorMap = (groups) => new Map(groups.map((g, i) => [g.code, CODE_COLORS[i % CODE_COLORS.length]]));
 
-function colorMap(groups) {
-  return new Map(groups.map((g, i) => [g.code, CODE_COLORS[i % CODE_COLORS.length]]));
+function makeStage(root, tileCount) {
+  const q = (name) => root.querySelector(`[data-${name}]`);
+  const stage = {
+    board: q("board"), regions: q("regions"), lines: q("lines"), dots: q("dots"),
+    overlay: q("overlay"), caption: q("caption"), tiles: [],
+  };
+  for (let i = 0; i < tileCount; i += 1) {
+    const fig = el("figure", "tile");
+    const img = el("img");
+    img.width = 176;
+    img.height = 176;
+    img.alt = "";
+    fig.append(img, el("figcaption"));
+    q("tiles").append(fig);
+    stage.tiles.push(fig);
+  }
+  return stage;
 }
+
+function clear(stage) {
+  stage.lines.replaceChildren();
+  stage.dots.replaceChildren();
+  stage.overlay.replaceChildren();
+  stage.regions.style.opacity = 0;
+}
+
+function setTile(tile, { image, x, y, s, o = 1, label = "", color = "", winner = false }) {
+  if (image) {
+    const img = tile.querySelector("img");
+    if (!img.src.endsWith(IMG + image.file)) img.src = IMG + image.file;
+    img.alt = `${state.prompt.text}, candidate ${image.index + 1}`;
+  }
+  tile.style.left = pctX(x - s / 2);
+  tile.style.top = pctY(y - s / 2);
+  tile.style.width = pctX(s);
+  tile.style.opacity = o;
+  tile.classList.toggle("winner", winner);
+  const cap = tile.querySelector("figcaption");
+  cap.textContent = label;
+  cap.style.background = color;
+}
+
+function svg(layer, tag, attrs) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  layer.append(n);
+  return n;
+}
+
+function drawCircle(stage, withLines) {
+  svg(stage.lines, "circle", { cx: V.cx, cy: V.cy, r: V.r, fill: withLines ? "none" : "#fff", stroke: "#c9d0db", "stroke-width": 1 });
+  if (!withLines) return;
+  for (const angle of state.angles) {
+    const dx = V.r * -Math.sin(angle);
+    const dy = -V.r * Math.cos(angle);
+    svg(stage.lines, "line", { x1: V.cx - dx, y1: V.cy - dy, x2: V.cx + dx, y2: V.cy + dy, stroke: "#14161b", "stroke-width": 1.2, "stroke-dasharray": "5 4" });
+  }
+}
+
+function paintRegions(stage, colors) {
+  const ctx = stage.regions.getContext("2d");
+  const scale = stage.regions.width / V.w;
+  const cell = 2;
+  ctx.clearRect(0, 0, stage.regions.width, stage.regions.height);
+  for (let y = V.cy - V.r; y < V.cy + V.r; y += cell) {
+    for (let x = V.cx - V.r; x < V.cx + V.r; x += cell) {
+      if ((x + cell / 2 - V.cx) ** 2 + (y + cell / 2 - V.cy) ** 2 > V.r ** 2) continue;
+      const code = codeOf({ x: (x + cell / 2 - V.cx) / (V.r * 0.92), y: -(y + cell / 2 - V.cy) / (V.r * 0.92) });
+      const color = colors.get(code);
+      ctx.fillStyle = color ? `${color}2e` : "#ffffff";
+      ctx.fillRect(Math.round(x * scale), Math.round(y * scale), cell * scale, cell * scale);
+    }
+  }
+  stage.regions.style.opacity = 1;
+}
+
+const dot = (stage, p, fill) => svg(stage.dots, "circle", { cx: p.x, cy: p.y, r: 5.5, fill, stroke: "#fff", "stroke-width": 2 });
+const leader = (stage, p) => {
+  if (p.x !== p.anchor.x || p.y !== p.anchor.y) {
+    svg(stage.lines, "line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#14161b", "stroke-width": 1.2 });
+  }
+};
 
 function placeOnPlot(images, size) {
   // Nearest free spot, searched in rings around the true point. Leave room for the code label.
@@ -119,310 +187,172 @@ function placeOnPlot(images, size) {
   });
 }
 
-// ---------- Stage ----------
-const board = $("board");
-const tilesLayer = $("tiles");
-const overlay = $("overlay");
-const lines = $("lines");
-const dots = $("dots");
-const regions = $("regions");
-const caption = $("stage-caption");
-const tiles = Array.from({ length: 6 }, () => {
-  const fig = el("figure", "tile");
-  const img = el("img");
-  img.width = 176;
-  img.height = 176;
-  img.alt = "";
-  fig.append(img, el("figcaption"));
-  tilesLayer.append(fig);
-  return fig;
-});
-
-function setTile(tile, { x, y, s, o = 1, label = "", color = "", winner = false }) {
-  tile.style.left = pctX(x - s / 2);
-  tile.style.top = pctY(y - s / 2);
-  tile.style.width = pctX(s);
-  tile.style.opacity = o;
-  tile.classList.toggle("winner", winner);
-  const cap = tile.querySelector("figcaption");
-  cap.textContent = label;
-  cap.style.background = color;
-}
-
-function svg(tag, attrs, layer = lines) {
-  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
-  layer.append(n);
-  return n;
-}
-// True embedding positions sit above the thumbnails so they are never hidden.
-const dot = (p, fill) => svg("circle", { cx: p.x, cy: p.y, r: 5.5, fill, stroke: "#fff", "stroke-width": 2 }, dots);
-const leader = (p) => {
-  if (p.x !== p.anchor.x || p.y !== p.anchor.y) svg("line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#14161b", "stroke-width": 1.2 });
-};
-
-function drawCircle(withLines) {
-  svg("circle", { cx: V.cx, cy: V.cy, r: V.r, fill: withLines ? "none" : "#fff", stroke: "#c9d0db", "stroke-width": 1 });
-  if (!withLines) return;
-  for (const angle of state.angles) {
-    // Points with x·cos + y·sin = 0 lie along direction (-sin, cos).
-    const dx = V.r * -Math.sin(angle);
-    const dy = -V.r * Math.cos(angle);
-    svg("line", { x1: V.cx - dx, y1: V.cy - dy, x2: V.cx + dx, y2: V.cy + dy, stroke: "#14161b", "stroke-width": 1.2, "stroke-dasharray": "5 4" });
-  }
-}
-
-function paintRegions(colors) {
-  const ctx = regions.getContext("2d");
-  const scale = regions.width / V.w;
-  ctx.clearRect(0, 0, regions.width, regions.height);
-  const cell = 2;
-  for (let y = V.cy - V.r; y < V.cy + V.r; y += cell) {
-    for (let x = V.cx - V.r; x < V.cx + V.r; x += cell) {
-      const px = (x + cell / 2 - V.cx) / (V.r * 0.92);
-      const py = -(y + cell / 2 - V.cy) / (V.r * 0.92);
-      if ((x + cell / 2 - V.cx) ** 2 + (y + cell / 2 - V.cy) ** 2 > V.r ** 2) continue;
-      const color = colors.get(codeOf({ x: px, y: py }));
-      ctx.fillStyle = color ? `${color}2e` : "#ffffff";
-      ctx.fillRect(Math.round(x * scale), Math.round(y * scale), cell * scale, cell * scale);
-    }
-  }
-}
-
-function ov(cls, x, y, w) {
+function ov(stage, cls, x, y, w) {
   const n = el("div", `ov ${cls}`);
   n.style.left = pctX(x);
   n.style.top = pctY(y);
   if (w !== undefined) n.style.width = pctX(w);
-  overlay.append(n);
+  stage.overlay.append(n);
   return n;
 }
+
+function scoreBar(stage, x, y, w, score, color) {
+  const bar = ov(stage, "ov-bar", x, y, w);
+  const fill = el("span");
+  fill.style.width = `${score * 100}%`;
+  fill.style.background = color;
+  bar.append(fill);
+  return bar;
+}
+
+// ---------- Watermarking ----------
+const gen = makeStage($("gen-stage"), 6);
+
+const genViews = [
+  function samples(stage, { images }) {
+    const s = 128;
+    images.forEach((image, i) => setTile(stage.tiles[i], {
+      image, s, x: V.cx + ((i % 3) - 1) * (s + 16), y: V.cy + (i < 3 ? -1 : 1) * (s / 2 + 8),
+    }));
+    stage.caption.innerHTML = `N = 6 samples of <strong>“${escapeHtml(state.prompt.text)}”</strong> from ${modelName()}.`;
+  },
+  function embed(stage, { images }) {
+    drawCircle(stage, false);
+    placeOnPlot(images, 54).forEach((p, i) => {
+      leader(stage, p);
+      dot(stage, p.anchor, "#14161b");
+      setTile(stage.tiles[i], { image: images[i], x: p.x, y: p.y, s: 54 });
+    });
+    stage.caption.textContent = "Each dot is one image's embedding. Similar images land close together.";
+  },
+  function regions(stage, { images, groups, colors }) {
+    paintRegions(stage, colors);
+    drawCircle(stage, true);
+    placeOnPlot(images, 46).forEach((p, i) => {
+      const code = codeOf(images[i]);
+      leader(stage, p);
+      dot(stage, p.anchor, colors.get(code));
+      setTile(stage.tiles[i], { image: images[i], x: p.x, y: p.y, s: 46, label: code, color: colors.get(code) });
+    });
+    stage.caption.innerHTML = `M = ${state.planes} hyperplanes give each image a ${state.planes}-bit code. These six images fall into <strong>${groups.length}</strong> regions.`;
+  },
+  function scores(stage, { groups, colors }) {
+    const n = groups.length;
+    const rowH = Math.min(78, 340 / n);
+    const y = (i) => V.cy - (n * rowH) / 2 + rowH / 2 + i * rowH;
+    const most = Math.max(...groups.map((g) => g.members.length));
+    const size = Math.min(60, rowH - 12, 186 / most - 6);
+    groups.forEach((g, i) => {
+      const row = ov(stage, "ov-row", 28, y(i));
+      const chip = el("span", "chip");
+      chip.style.background = colors.get(g.code);
+      const text = el("span");
+      text.append(el("span", "ov-code", g.code), el("br"), el("span", "ov-muted", `${g.members.length} ${g.members.length === 1 ? "image" : "images"}`));
+      row.append(chip, text);
+      g.members.forEach((image, j) => setTile(stage.tiles[image.index], { image, x: 140 + size / 2 + j * (size + 6), y: y(i), s: size }));
+      scoreBar(stage, 338, y(i), 100, scoreOf(g.code), colors.get(g.code));
+      ov(stage, "ov-score", 446, y(i)).textContent = scoreOf(g.code).toFixed(2);
+    });
+    ov(stage, "ov-muted", 338, y(0) - 38).textContent = "Key score";
+    stage.caption.innerHTML = `Key <code>${hex(state.key)}</code> gives every region a score between 0 and 1.`;
+  },
+  function pick(stage, { images, colors, pick: chosen }) {
+    const others = images.filter((im) => im !== chosen.image);
+    setTile(stage.tiles[chosen.image.index], { image: chosen.image, x: V.cx, y: 158, s: 196, winner: true });
+    others.forEach((im, j) => setTile(stage.tiles[im.index], { image: im, x: V.cx + (j - 2) * 54, y: 356, s: 44, o: 0.35 }));
+    const label = ov(stage, "ov-label", V.cx, 266);
+    const chip = el("span", "chip");
+    chip.style.background = colors.get(chosen.winner.code);
+    label.append(chip, " ", el("strong", "", "Returned image"), ` · region ${chosen.winner.code}`);
+    const n = chosen.winner.members.length;
+    stage.caption.innerHTML = `Region <strong>${chosen.winner.code}</strong> wins: score ${chosen.winner.score.toFixed(2)}, ${n} ${n === 1 ? "candidate" : "candidates"}. ` +
+      `The winner maximises <code>log(score) / candidates</code>, which keeps the output distribution unchanged. Pixels are untouched.`;
+  },
+];
+
+// ---------- Detection ----------
+const det = makeStage($("det-stage"), 1);
+
+function checkedImage(images, chosen) {
+  if (state.check === "marked") return chosen.image;
+  return images[Math.floor(uniform(state.plainSeed, 0x3c1 + state.prompt.id) * images.length)];
+}
+
+const detViews = [
+  function take(stage, { image }) {
+    setTile(stage.tiles[0], { image, x: V.cx, y: V.cy, s: 250 });
+    stage.caption.textContent = state.check === "marked"
+      ? "The image returned by the watermarking steps above."
+      : "An ordinary sample from the generator, never selected with the key.";
+  },
+  function locate(stage, { image, result }) {
+    const colors = new Map(result.codes.map((c, i) => [c, i === 0 ? "#14161b" : "#9aa3b2"]));
+    paintRegions(stage, colors);
+    drawCircle(stage, true);
+    const [p] = placeOnPlot([image], 90);
+    leader(stage, p);
+    dot(stage, p.anchor, "#14161b");
+    setTile(stage.tiles[0], { image, x: p.x, y: p.y, s: 90, label: result.code, color: "#14161b" });
+    stage.caption.innerHTML = `The image lands in region <strong>${result.code}</strong>.` +
+      (result.codes.length > 1 ? ` It sits close to a hyperplane, so the neighbouring region ${result.codes.slice(1).join(", ")} is checked too, in case an edit moved it.` : "");
+  },
+  function score(stage, { image, result }) {
+    setTile(stage.tiles[0], { image, x: 110, y: 150, s: 150 });
+    const detected = result.p < DETECT_P;
+    ov(stage, "ov-muted", 220, 92).textContent = `Key score of region ${result.codes.join(" / ")}`;
+    scoreBar(stage, 220, 120, 210, result.score, "#14161b");
+    ov(stage, "ov-score", 440, 120).textContent = result.score.toFixed(2);
+    const verdict = ov(stage, "ov-verdict", 220, 168);
+    verdict.append(el("strong", "", detected ? "Watermark detected" : "No watermark detected"),
+      el("span", "", `A plain image scores this high ${Math.round(result.p * 100)}% of the time.`));
+    stage.caption.textContent = "One image is weak evidence, so a wrong call is possible here. In practice, scores from a batch of images are combined.";
+  },
+];
+
+// ---------- Rendering and scroll sync ----------
+const sections = [
+  { root: document.querySelector('[data-section="gen"]'), stage: gen, views: genViews, step: 0 },
+  { root: document.querySelector('[data-section="det"]'), stage: det, views: detViews, step: 0 },
+];
 
 function render() {
   const images = imagesOf();
   const groups = groupsOf(images);
-  const colors = colorMap(groups);
-  const pick = race(groups, state.key, state.seed, state.prompt.id);
-  const step = state.step;
-
-  tiles.forEach((tile, i) => {
-    const img = tile.querySelector("img");
-    const src = IMG + images[i].file;
-    if (!img.src.endsWith(src)) img.src = src;
-    img.alt = `${state.prompt.text}, candidate ${i + 1}`;
-  });
-  lines.replaceChildren();
-  dots.replaceChildren();
-  overlay.replaceChildren();
-  regions.style.opacity = step === 2 ? 1 : 0;
-  board.classList.toggle("is-detect", step === 6);
+  const chosen = race(groups);
+  const image = checkedImage(images, chosen);
+  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, image, result: detect(image) };
   document.querySelectorAll("[data-key-value]").forEach((n) => (n.textContent = `key ${hex(state.key)}`));
-
-  const views = [viewGrid, viewPlot, viewCodes, viewScores, viewPick, viewFair, viewDetect];
-  views[step]({ images, groups, colors, pick });
+  for (const section of sections) {
+    clear(section.stage);
+    section.views[section.step](section.stage, ctx);
+  }
 }
 
-function viewGrid({ images }) {
-  const s = 128;
-  images.forEach((_, i) => setTile(tiles[i], { x: V.cx + ((i % 3) - 1) * (s + 16), y: V.cy + (i < 3 ? -1 : 1) * (s / 2 + 8), s, label: `#${i + 1}`, color: "#14161b" }));
-  caption.innerHTML = `Six samples of <strong>“${escapeHtml(state.prompt.text)}”</strong> from ${modelName()}.`;
-}
-
-function viewPlot({ images }) {
-  drawCircle(false);
-  const spots = placeOnPlot(images, 54);
-  spots.forEach((p, i) => {
-    leader(p);
-    dot(p.anchor, "#14161b");
-    setTile(tiles[i], { x: p.x, y: p.y, s: 54 });
-  });
-  caption.textContent = "Each dot is one image's embedding, linked to its thumbnail. Nearby dots are images the encoder sees as similar.";
-}
-
-function viewCodes({ images, groups, colors }) {
-  paintRegions(colors);
-  drawCircle(true);
-  const spots = placeOnPlot(images, 46);
-  spots.forEach((p, i) => {
-    const code = codeOf(images[i]);
-    leader(p);
-    dot(p.anchor, colors.get(code));
-    setTile(tiles[i], { x: p.x, y: p.y, s: 46, label: code, color: colors.get(code) });
-  });
-  caption.innerHTML = `<strong>${state.planes} lines</strong> cut the plot into ${2 * state.planes} regions, each with its own code. The dots fall into <strong>${groups.length}</strong> of them; the thumbnail label shows its dot's code.` +
-    (groups.length === 1 ? " Redraw the lines to split them up." : "");
-}
-
-function rowLayout(n) {
-  const rowH = Math.min(78, 340 / n);
-  const top = V.cy - (n * rowH) / 2 + rowH / 2;
-  return { rowH, y: (i) => top + i * rowH, size: Math.min(60, rowH - 12) };
-}
-
-function viewScores({ groups, colors }, highlight = null) {
-  const { y, size: rowSize } = rowLayout(groups.length);
-  const most = Math.max(...groups.map((g) => g.members.length));
-  const size = Math.min(rowSize, 186 / most - 6);
-  groups.forEach((g, i) => {
-    const row = ov("ov-row", 28, y(i));
-    const chip = el("span", "chip");
-    chip.style.background = colors.get(g.code);
-    const text = el("span");
-    text.append(el("span", "ov-code", g.code), el("br"), el("span", "ov-muted", `${g.members.length} ${g.members.length === 1 ? "image" : "images"}`));
-    row.append(chip, text);
-    g.members.forEach((image, j) => setTile(tiles[image.index], { x: 140 + size / 2 + j * (size + 6), y: y(i), s: size }));
-    const score = scoreOf(state.key, g.code);
-    const bar = ov("ov-bar", 338, y(i), 100);
-    const fill = el("span");
-    fill.style.width = `${score * 100}%`;
-    fill.style.background = colors.get(g.code);
-    bar.append(fill);
-    ov("ov-score", 446, y(i)).textContent = score.toFixed(2);
-  });
-  ov("ov-muted", 338, y(0) - 38).textContent = "Key score";
-  const top = groups.reduce((a, b) => (scoreOf(state.key, b.code) > scoreOf(state.key, a.code) ? b : a));
-  caption.innerHTML = `With key <code>${hex(state.key)}</code>, code <strong>${top.code}</strong> scores highest (${scoreOf(state.key, top.code).toFixed(2)}).`;
-}
-
-function viewPick({ images, pick, colors }) {
-  const big = 196;
-  const others = images.filter((im) => im !== pick.image);
-  setTile(tiles[pick.image.index], { x: V.cx, y: 158, s: big, winner: true });
-  others.forEach((im, j) => setTile(tiles[im.index], { x: V.cx + (j - 2) * 54, y: 356, s: 44, o: 0.35 }));
-  const label = ov("ov-label", V.cx, 266);
-  const chip = el("span", "chip");
-  chip.style.background = colors.get(pick.winner.code);
-  label.append(chip, " ", el("strong", "", "Returned image"), ` · code ${pick.winner.code}`);
-  $("race-values").textContent = pick.rows.map((r) => `${r.code}: log(${r.score.toFixed(2)}) / ${r.members.length} = ${r.value.toFixed(3)}`).join("\n") + `\nHighest wins: ${pick.winner.code}`;
-  $("race-values").style.whiteSpace = "pre-line";
-  const size = pick.winner.members.length;
-  caption.innerHTML = `Code <strong>${pick.winner.code}</strong> wins the race` +
-    (size > 1 ? `, and one of its ${size} images is drawn at random.` : ".") +
-    " The other candidates are discarded.";
-}
-
-function viewFair({ images }) {
-  const s = 62;
-  const base = 352;
-  const maxH = 230;
-  const total = Math.max(1, state.runs);
-  images.forEach((_, i) => {
-    const x = V.cx + (i - 2.5) * 74;
-    setTile(tiles[i], { x, y: 74, s });
-    const share = state.tally[i] / total;
-    const bar = ov("ov-tally", x, base, 30);
-    bar.style.top = "auto";
-    bar.style.bottom = pctY(V.h - base);
-    bar.style.height = pctY(Math.min(maxH, (share / 0.3) * maxH));
-    ov("ov-pct", x, base + 8).textContent = state.runs ? `${Math.round(share * 100)}%` : "";
-  });
-  const expectY = base - (1 / 6 / 0.3) * maxH;
-  const line = ov("ov-expect", 20, expectY, V.w - 40);
-  caption.innerHTML = state.runs
-    ? `<strong>${state.runs.toLocaleString()} random keys.</strong> Each candidate was returned about one time in six, the dashed line.`
-    : "Running random keys…";
-}
-
-function detectionPrompts() {
-  const at = labPrompts.indexOf(state.prompt);
-  return [state.prompt, ...[5, 10, 15].map((k) => labPrompts[(at + k) % labPrompts.length])];
-}
-
-function viewDetect() {
-  tiles.forEach((tile) => setTile(tile, { x: V.cx, y: V.cy, s: 120, o: 0 }));
-  const prompts = detectionPrompts();
-  const marked = prompts.map((p) => race(groupsOf(imagesOf(p)), state.key, state.seed, p.id).image);
-  const clean = prompts.map((p, i) => {
-    const ims = imagesOf(p);
-    return ims[Math.floor(uniform(state.cleanSeed, 0x3c1 + i * 977 + p.id) * ims.length)];
-  });
-  const cut = cutoff(prompts, state.key);
-  const panel = el("div", "detect");
-  const batch = (title, list, cls) => {
-    const scores = list.map((im) => detectScore(im, state.key));
-    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
-    const box = el("div", `batch ${cls}`);
-    const thumbs = el("div", "batch-thumbs");
-    list.forEach((im, i) => {
-      const fig = el("figure");
-      const img = el("img");
-      img.src = IMG + im.file;
-      img.alt = `${prompts[i].text}`;
-      fig.append(img, el("figcaption", "", scores[i].toFixed(2)));
-      thumbs.append(fig);
-    });
-    const avgBox = el("div", "batch-avg");
-    const verdict = cls === "marked"
-      ? (avg > cut ? "Watermark detected" : "Missed with this key")
-      : (avg > cut ? "False alarm" : "Not flagged");
-    avgBox.append(el("strong", "", avg.toFixed(2)), el("span", "", verdict));
-    box.append(el("h4", "", title), thumbs, avgBox);
-    return { box, avg };
-  };
-  const a = batch("Selected with your key", marked, "marked");
-  const b = batch("Plain samples, no watermark", clean, "clean");
-  const meter = el("div", "meter");
-  meter.innerHTML = `<div class="meter-track"></div><div class="meter-ends"><span>0</span><span>1</span></div>`;
-  const cutEl = el("div", "meter-cut");
-  cutEl.style.left = `${cut * 100}%`;
-  const dot = (avg, cls) => {
-    const d = el("div", `meter-dot ${cls}`);
-    d.style.left = `${avg * 100}%`;
-    return d;
-  };
-  meter.append(cutEl, dot(b.avg, "clean"), dot(a.avg, "marked"));
-  const legend = el("p", "meter-legend");
-  legend.innerHTML = `<span><i class="meter-dot marked"></i>your batch</span><span><i class="meter-dot clean"></i>plain batch</span><span><i class="meter-cut"></i>cutoff ${cut.toFixed(2)}</span>`;
-  const meterBox = el("div", "meter-box");
-  meterBox.append(meter, legend);
-  panel.append(a.box, b.box, meterBox);
-  overlay.append(panel);
-  caption.innerHTML = `A batch is flagged when its average beats the cutoff, set so only 10% of plain batches from these prompts pass. ` +
-    `With ${state.planes} lines and 4 images the demo is noisy. The paper uses longer codes and larger batches.`;
-}
-
-// ---------- Fairness tally ----------
-function runTally(count) {
-  cancelAnimationFrame(tallyTimer);
-  const images = imagesOf();
-  const groups = groupsOf(images);
-  let left = count;
-  const tick = () => {
-    const n = reduced.matches ? left : Math.min(left, 40);
-    for (let i = 0; i < n; i += 1) {
-      state.tally[race(groups, rand32(), rand32(), state.prompt.id).image.index] += 1;
+const narrow = matchMedia("(max-width: 980px)");
+function syncSteps() {
+  const line = innerHeight * (narrow.matches ? 0.72 : 0.5);
+  let changed = false;
+  for (const section of sections) {
+    let best = 0;
+    let bestDistance = Infinity;
+    for (const s of section.root.querySelectorAll(".step")) {
+      const r = s.getBoundingClientRect();
+      const distance = r.top > line ? r.top - line : r.bottom < line ? line - r.bottom : 0;
+      if (distance < bestDistance) { bestDistance = distance; best = Number(s.dataset.step); }
     }
-    state.runs += n;
-    left -= n;
-    if (state.step === 5) render();
-    if (left > 0) tallyTimer = requestAnimationFrame(tick);
-  };
-  tick();
+    if (best !== section.step) changed = true;
+    section.step = best;
+    section.root.querySelectorAll(".step").forEach((s) => s.classList.toggle("is-active", Number(s.dataset.step) === best));
+  }
+  if (changed) render();
 }
-function resetTally() {
-  cancelAnimationFrame(tallyTimer);
-  state.tally = [0, 0, 0, 0, 0, 0];
-  state.runs = 0;
-}
+addEventListener("scroll", syncSteps, { passive: true });
+addEventListener("resize", syncSteps);
 
 // ---------- Controls ----------
-const modelSelect = $("model");
-const modelName = () => modelSelect.selectedOptions[0].textContent;
-const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
-
-function setStep(step) {
-  if (step === state.step) return;
-  state.step = step;
-  document.querySelectorAll(".step").forEach((s) => s.classList.toggle("is-active", Number(s.dataset.step) === step));
-  if (step === 5 && state.runs === 0) runTally(1000);
-  render();
-}
-
 function updatePrompt() {
   $("prompt-name").textContent = state.prompt.text;
   $("prompt-preview").src = IMG + state.prompt.images[state.model][0].file;
-  resetTally();
-  if (state.step === 5) runTally(1000);
   render();
 }
 
@@ -431,26 +361,34 @@ modelSelect.addEventListener("change", () => {
   updatePrompt();
 });
 
-document.querySelectorAll("[data-planes]").forEach((button) => {
-  button.addEventListener("click", () => {
-    state.planes = Number(button.dataset.planes);
-    document.querySelectorAll("[data-planes]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
-    drawPlanes();
-    resetTally();
-    render();
-  });
-});
+function pressOnly(selector, button) {
+  document.querySelectorAll(selector).forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+}
 
-document.querySelectorAll("[data-action]").forEach((button) => {
-  button.addEventListener("click", () => {
-    const action = button.dataset.action;
-    if (action === "planes") { drawPlanes(); resetTally(); }
-    if (action === "key") { state.key = rand32(); state.seed = rand32(); }
-    if (action === "clean") state.cleanSeed = rand32();
-    if (action === "tally") { runTally(1000); return; }
-    render();
-  });
-});
+document.querySelectorAll("[data-planes]").forEach((button) => button.addEventListener("click", () => {
+  state.planes = Number(button.dataset.planes);
+  pressOnly("[data-planes]", button);
+  drawPlanes();
+  render();
+}));
+
+document.querySelectorAll("[data-check]").forEach((button) => button.addEventListener("click", () => {
+  state.check = button.dataset.check;
+  pressOnly("[data-check]", button);
+  render();
+}));
+
+document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => {
+  const action = button.dataset.action;
+  if (action === "planes") drawPlanes();
+  if (action === "key") { state.key = rand32(); state.seed = rand32(); }
+  if (action === "plain") {
+    state.plainSeed = rand32();
+    state.check = "plain";
+    pressOnly("[data-check]", document.querySelector('[data-check="plain"]'));
+  }
+  render();
+}));
 
 const dialog = $("prompt-dialog");
 $("open-prompts").addEventListener("click", () => {
@@ -475,28 +413,9 @@ $("open-prompts").addEventListener("click", () => {
   grid.querySelector('[aria-pressed="true"]').focus();
 });
 
-// Activate the step closest to the trigger line. Recomputed on every scroll frame, so jumps
-// (anchor links, fast scrolling) land on the right step.
-const narrow = matchMedia("(max-width: 980px)");
-const stepEls = [...document.querySelectorAll(".step")];
-function syncStep() {
-  const line = innerHeight * (narrow.matches ? 0.72 : 0.5);
-  let best = 0;
-  let bestDistance = Infinity;
-  for (const s of stepEls) {
-    const r = s.getBoundingClientRect();
-    const distance = r.top > line ? r.top - line : r.bottom < line ? line - r.bottom : 0;
-    if (distance < bestDistance) { bestDistance = distance; best = Number(s.dataset.step); }
-  }
-  setStep(best);
-}
-addEventListener("scroll", syncStep, { passive: true });
-addEventListener("resize", syncStep);
-
 drawPlanes();
-document.querySelector('.step[data-step="0"]').classList.add("is-active");
 render();
-syncStep();
+syncSteps();
 
 const copy = $("copy-citation");
 const citation = $("citation-text");

@@ -16,191 +16,148 @@
 <body>
   <a class="skip" href="#main">Skip to content</a>
   <header class="topbar wrap">
-    <a class="wordmark" href="#main">Distortion-free semantic watermarks</a>
     <nav aria-label="Page">
-      <a href="#how">How it works</a>
-      <a href="#results">Results</a>
+      <a href="#watermarking">Watermarking</a>
+      <a href="#detection">Detection</a>
+      <a href="#about">About</a>
       <a href="#citation">Citation</a>
     </nav>
   </header>
 
   <main id="main">
     <section class="hero wrap" aria-labelledby="project-title">
-      <div class="hero-text">
-      <h1 id="project-title">Distortion-Free Semantic Watermarks for Black-Box Generative Models</h1>
-      <p class="lede">Ask the model for several images and let a secret key choose which one to return. The result is an ordinary sample from the model, untouched. The key holder can still detect the choice later, even after edits that keep what the image shows.</p>
-      <div class="byline">
-        <p><strong>Aviv Yossef, Or Patashnik, Or Zamir</strong><br>Tel Aviv University</p>
-        <div class="hero-links">
-          <a class="link-button" href="https://github.com/avivyossef/distortion-free-semantic-watermark">Code on GitHub</a>
-          <span>Paper and encoder weights coming soon</span>
-        </div>
+      <h1 id="project-title">Distortion-Free Semantic Watermarks<br>for Black-Box Generative Models</h1>
+      <p class="authors">Aviv Yossef · Or Patashnik · Or Zamir</p>
+      <p class="affiliation">Tel Aviv University</p>
+      <div class="hero-links">
+        <a class="link-button primary" href="https://github.com/avivyossef/distortion-free-semantic-watermark">Code on GitHub</a>
+        <span class="link-button soon" aria-disabled="true">Encoder weights · coming soon</span>
       </div>
-      </div>
-      <figure class="teaser" aria-label="Six samples of one prompt, with the one chosen by the key outlined">
-        <div class="teaser-grid">
-          <img src="assets/lab/sdxl-1-0.webp" alt="" width="176" height="176">
-          <img src="assets/lab/sdxl-1-1.webp" alt="" width="176" height="176">
-          <img class="picked" src="assets/lab/sdxl-1-2.webp" alt="" width="176" height="176">
-          <img src="assets/lab/sdxl-1-3.webp" alt="" width="176" height="176">
-          <img src="assets/lab/sdxl-1-4.webp" alt="" width="176" height="176">
-          <img src="assets/lab/sdxl-1-5.webp" alt="" width="176" height="176">
-        </div>
-        <figcaption>Six ordinary samples of one prompt. The secret key chose the outlined one. <a href="#how">See how</a></figcaption>
-      </figure>
     </section>
 
-    <section class="story wrap" id="how" aria-labelledby="how-title">
-      <h2 id="how-title" class="visually-hidden">How it works</h2>
-      <div class="steps">
-        <article class="step" data-step="0">
-          <p class="step-num">1</p>
-          <h3>Ask the generator for six images</h3>
-          <p>Same prompt, six independent samples. We never touch the model's weights or its sampling. Any text-to-image API works.</p>
-          <p class="hint">Change the prompt or the model at the top of the panel at any time. Every step updates.</p>
-        </article>
-        <article class="step" data-step="1">
-          <p class="step-num">2</p>
-          <h3>Describe each image with an encoder</h3>
-          <p>A semantic encoder turns every image into an embedding. Here the six embeddings are projected to 2D so you can see them. Images that look alike land close together.</p>
-        </article>
-        <article class="step" data-step="2">
-          <p class="step-num">3</p>
-          <h3>Cut the space into codes</h3>
-          <p>Random hyperplanes split the embedding space. Each line contributes one bit, depending on which side an image falls, so every image gets a short code. Images in the same region share a code.</p>
-          <div class="step-controls">
-            <div class="segmented" role="group" aria-label="Number of hyperplanes">
-              <button type="button" data-planes="2" aria-pressed="true">2 lines</button>
-              <button type="button" data-planes="3" aria-pressed="false">3 lines</button>
-              <button type="button" data-planes="4" aria-pressed="false">4 lines</button>
+    <section class="part wrap" id="watermarking" aria-labelledby="watermarking-title">
+      <h2 id="watermarking-title">Watermarking</h2>
+      <div class="story" data-section="gen">
+        <div class="steps">
+          <article class="step" data-step="0">
+            <p class="step-num">1</p>
+            <h3>Sample N independent generations from the generator</h3>
+          </article>
+          <article class="step" data-step="1">
+            <p class="step-num">2</p>
+            <h3>Embed each image with a semantic encoder</h3>
+          </article>
+          <article class="step" data-step="2">
+            <p class="step-num">3</p>
+            <h3>Divide the semantic space into 2<sup>M</sup> regions using LSH (semantic codes)</h3>
+            <div class="step-controls">
+              <div class="segmented" role="group" aria-label="Number of hyperplanes, M">
+                <button type="button" data-planes="2" aria-pressed="true">M = 2</button>
+                <button type="button" data-planes="3" aria-pressed="false">3</button>
+                <button type="button" data-planes="4" aria-pressed="false">4</button>
+              </div>
+              <button class="button" type="button" data-action="planes">Redraw hyperplanes</button>
             </div>
-            <button class="button" type="button" data-action="planes">Redraw lines</button>
-          </div>
-        </article>
-        <article class="step" data-step="3">
-          <p class="step-num">4</p>
-          <h3>Score each code with a secret key</h3>
-          <p>A keyed hash gives every code a score between 0 and 1. Without the key, the scores look random.</p>
-          <div class="step-controls">
-            <button class="button" type="button" data-action="key">Redraw key</button>
-            <code class="key-value" data-key-value></code>
-          </div>
-        </article>
-        <article class="step" data-step="4">
-          <p class="step-num">5</p>
-          <h3>Return one image, pixels untouched</h3>
-          <p>The codes race: the highest <code>log(score) / group size</code> wins, and one image from that group is returned as is. High-scoring codes usually win. Larger groups get a head start, which is what keeps the output fair.</p>
-          <details class="race">
-            <summary>Race values for this key</summary>
-            <p id="race-values"></p>
-          </details>
-        </article>
-        <article class="step" data-step="5">
-          <p class="step-num">6</p>
-          <h3>Across keys, nothing changes</h3>
-          <p>Each key favours some images. Averaged over random keys, every candidate is returned equally often, exactly as if you had sampled from the model directly. That is what distortion-free means.</p>
-          <div class="step-controls">
-            <button class="button" type="button" data-action="tally">Run 1,000 more keys</button>
-          </div>
-        </article>
-        <article class="step" data-step="6">
-          <p class="step-num">7</p>
-          <h3>Detect it from a batch</h3>
-          <p>Take a few images from one source and score each image's code with the key. Near a line, the neighbouring code is tried too, so small edits don't break it. Images chosen with the key score higher than chance on average. One image is weak evidence, so we average over a batch.</p>
-          <div class="step-controls">
-            <button class="button" type="button" data-action="clean">Draw another clean batch</button>
-            <button class="button" type="button" data-action="key">Redraw key</button>
-          </div>
-        </article>
-      </div>
+          </article>
+          <article class="step" data-step="3">
+            <p class="step-num">4</p>
+            <h3>Score each region with a secret key</h3>
+            <div class="step-controls">
+              <button class="button" type="button" data-action="key">Redraw key</button>
+              <code class="key-value" data-key-value></code>
+            </div>
+          </article>
+          <article class="step" data-step="4">
+            <p class="step-num">5</p>
+            <h3>Return one image, according to the score and the number of candidates in the same semantic region</h3>
+            <div class="step-controls">
+              <button class="button" type="button" data-action="key">Redraw key</button>
+            </div>
+          </article>
+        </div>
 
-      <div class="stage-wrap">
-        <div class="stage" id="stage">
-          <div class="stage-bar">
-            <button class="prompt-button" id="open-prompts" type="button" aria-haspopup="dialog">
-              <img id="prompt-preview" src="assets/lab/sd21-0-0.webp" alt="" width="36" height="36">
-              <span class="prompt-text"><small>Prompt</small><span id="prompt-name">Two women walk outside, both holding up umbrellas</span></span>
-              <span class="chev" aria-hidden="true"></span>
-            </button>
-            <label class="model-pick">
-              <small>Model</small>
-              <select id="model">
-                <option value="sd21">Stable Diffusion 2.1</option>
-                <option value="sdxl">SDXL</option>
-                <option value="gpt">GPT Image</option>
-                <option value="flux">FLUX.2 Klein Base 4B</option>
-              </select>
-            </label>
+        <div class="stage-wrap">
+          <div class="stage" id="gen-stage">
+            <div class="stage-bar">
+              <button class="prompt-button" id="open-prompts" type="button" aria-haspopup="dialog">
+                <img id="prompt-preview" src="assets/lab/sd21-0-0.webp" alt="" width="36" height="36">
+                <span class="prompt-text"><small>Prompt</small><span id="prompt-name">Two women walk outside, both holding up umbrellas</span></span>
+                <span class="chev" aria-hidden="true"></span>
+              </button>
+              <label class="model-pick">
+                <small>Model</small>
+                <select id="model">
+                  <option value="sd21">Stable Diffusion 2.1</option>
+                  <option value="sdxl">SDXL</option>
+                  <option value="gpt">GPT Image</option>
+                  <option value="flux">FLUX.2 Klein Base 4B</option>
+                </select>
+              </label>
+            </div>
+            <div class="board" data-board>
+              <canvas data-regions width="1000" height="800" aria-hidden="true"></canvas>
+              <svg data-lines viewBox="0 0 500 400" aria-hidden="true"></svg>
+              <div data-tiles></div>
+              <svg data-dots viewBox="0 0 500 400" aria-hidden="true"></svg>
+              <div data-overlay></div>
+            </div>
+            <p class="stage-caption" data-caption aria-live="polite"></p>
           </div>
-          <div class="board" id="board">
-            <canvas id="regions" width="1000" height="800" aria-hidden="true"></canvas>
-            <svg id="lines" viewBox="0 0 500 400" aria-hidden="true"></svg>
-            <div id="tiles"></div>
-            <svg id="dots" viewBox="0 0 500 400" aria-hidden="true"></svg>
-            <div id="overlay"></div>
+        </div>
+      </div>
+    </section>
+
+    <section class="part wrap" id="detection" aria-labelledby="detection-title">
+      <h2 id="detection-title">Detection</h2>
+      <div class="story" data-section="det">
+        <div class="steps">
+          <article class="step" data-step="0">
+            <p class="step-num">1</p>
+            <h3>Take one image to check</h3>
+            <div class="step-controls">
+              <div class="segmented" role="group" aria-label="Image to check">
+                <button type="button" data-check="marked" aria-pressed="true">Watermarked</button>
+                <button type="button" data-check="plain" aria-pressed="false">Plain sample</button>
+              </div>
+              <button class="button" type="button" data-action="plain">Another plain sample</button>
+            </div>
+          </article>
+          <article class="step" data-step="1">
+            <p class="step-num">2</p>
+            <h3>Embed it and find its semantic region</h3>
+          </article>
+          <article class="step" data-step="2">
+            <p class="step-num">3</p>
+            <h3>Score its region with the same secret key</h3>
+          </article>
+        </div>
+
+        <div class="stage-wrap">
+          <div class="stage" id="det-stage">
+            <p class="stage-note">Same prompt, model, hyperplanes and key as above.</p>
+            <div class="board" data-board>
+              <canvas data-regions width="1000" height="800" aria-hidden="true"></canvas>
+              <svg data-lines viewBox="0 0 500 400" aria-hidden="true"></svg>
+              <div data-tiles></div>
+              <svg data-dots viewBox="0 0 500 400" aria-hidden="true"></svg>
+              <div data-overlay></div>
+            </div>
+            <p class="stage-caption" data-caption aria-live="polite"></p>
           </div>
-          <p class="stage-caption" id="stage-caption" aria-live="polite"></p>
         </div>
       </div>
     </section>
 
     <noscript>
       <figure class="fallback wrap">
-        <img src="assets/method.svg" alt="The generator returns candidates, an encoder groups them by code, and a secret key guides selection. Detection averages scores from a batch." width="1000" height="660">
+        <img src="assets/method.svg" alt="The generator returns candidates, an encoder groups them by code, and a secret key guides selection." width="1000" height="660">
       </figure>
     </noscript>
 
-    <p class="demo-note wrap">The walkthrough uses six pre-generated candidates per prompt and a simplified 2D projection centred on each prompt. The paper hashes full encoder embeddings and calibrates detection on a separate clean set.</p>
-
-    <section class="section wrap" id="results" aria-labelledby="results-title">
-      <h2 id="results-title">Results</h2>
-      <div class="figures">
-        <div>
-          <p class="figure-value">97.3%</p>
-          <p>of 10-image batches detected at a 1% false-positive rate, with (N, M) = (16, 8).</p>
-        </div>
-        <div>
-          <p class="figure-value">5.04</p>
-          <p>FID for (16, 8). Tree-Ring scores 5.61 and SEAL 6.88. Lower is better.</p>
-        </div>
-        <div>
-          <p class="figure-value">&minus;1.2%</p>
-          <p>change in diversity, compared with &minus;13.2% for SEAL and &minus;9.1% for Gaussian Shading.</p>
-        </div>
-      </div>
-      <div class="tables">
-        <div class="table-wrap"><table>
-          <caption>True-positive rate (%) on unedited images. B is the number of images per batch. Columns are false-positive rate targets.</caption>
-          <thead><tr><th>(N, M)</th><th>B</th><th>1%</th><th>5%</th><th>20%</th></tr></thead>
-          <tbody>
-            <tr><td>(8, 4)</td><td>1</td><td>4.9</td><td>23.1</td><td>64.2</td></tr>
-            <tr><td></td><td>5</td><td>52.3</td><td>75.3</td><td>90.5</td></tr>
-            <tr><td></td><td>10</td><td>69.7</td><td>85.0</td><td>94.1</td></tr>
-            <tr class="group-start"><td>(16, 8)</td><td>1</td><td>8.6</td><td>35.0</td><td>81.5</td></tr>
-            <tr><td></td><td>5</td><td>86.2</td><td>96.4</td><td>99.4</td></tr>
-            <tr><td></td><td>10</td><td>97.3</td><td>99.2</td><td>99.8</td></tr>
-            <tr class="group-start"><td>(32, 12)</td><td>1</td><td>13.5</td><td>47.8</td><td>92.0</td></tr>
-            <tr><td></td><td>5</td><td>97.3</td><td>99.4</td><td>99.9</td></tr>
-            <tr><td></td><td>10</td><td>99.7</td><td>99.9</td><td>100.0</td></tr>
-          </tbody>
-        </table></div>
-        <div class="table-wrap"><table>
-          <caption>FID on 10,000 watermarked and matched clean generations. Diversity compares 60 generations per prompt across 60 prompts.</caption>
-          <thead><tr><th>Method</th><th>FID ↓</th><th>Diversity change</th></tr></thead>
-          <tbody>
-            <tr><td>Ours (8, 4)</td><td>4.75</td><td>&minus;0.5%</td></tr>
-            <tr><td>Ours (16, 8)</td><td>5.04</td><td>&minus;1.2%</td></tr>
-            <tr><td>Ours (32, 12)</td><td>5.22</td><td>&minus;1.0%</td></tr>
-            <tr class="group-start"><td>Tree-Ring</td><td>5.61</td><td>+0.4%</td></tr>
-            <tr><td>Gaussian Shading</td><td>5.42</td><td>&minus;9.1%</td></tr>
-            <tr><td>SEAL</td><td>6.88</td><td>&minus;13.2%</td></tr>
-          </tbody>
-        </table></div>
-      </div>
-    </section>
+    <p class="demo-note wrap">Pre-generated candidates, shown in a simplified 2D projection centred on each prompt. The paper hashes full encoder embeddings.</p>
 
     <section class="section wrap" id="about" aria-labelledby="about-title">
-      <h2 id="about-title">Why it works</h2>
+      <h2 id="about-title">About the method</h2>
       <div class="properties">
         <div>
           <h3>Black-box</h3>
@@ -212,7 +169,7 @@
         </div>
         <div>
           <h3>Survives edits</h3>
-          <p>Cropping, resizing, and compression change pixels but not what an image depicts. The encoder is trained to describe an image and its edited versions alike, so the image's code, or a nearby one, still carries the signal.</p>
+          <p>Cropping, resizing, and compression change pixels but not what an image depicts. The encoder is trained to describe an image and its edited versions alike, so the image's region, or a neighbouring one, still carries the signal.</p>
         </div>
       </div>
     </section>
