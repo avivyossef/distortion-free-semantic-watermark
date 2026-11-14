@@ -1,498 +1,501 @@
-const demo = document.querySelector("#walkthrough");
-const byId = (id) => document.getElementById(id);
-const previous = byId("previous");
-const next = byId("next");
-const status = byId("step-status");
-const detectionNext = byId("detection-next");
-const detectionPrevious = byId("detection-previous");
-const model = byId("model");
-const dialog = byId("prompt-dialog");
-const promptGrid = byId("prompt-grid");
-const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-const imageRoot = "assets/lab/";
-const generationStages = ["Generate candidates", "Group by image code", "Return one image"];
-const detectionStages = ["Collect a batch", "Score each image", "Make a batch decision"];
-const generationActions = ["Show hyperplanes", "Group images", "Select an image", "Replay"];
-const detectionActions = ["Check image codes", "Apply the secret key", "Check the batch", "Replay"];
-const stationForStep = [0, 1, 1, 2];
-const stepNotes = [
-  "Six outputs from the same prompt.",
-  "",
-  "Images with the same code go in the same group.",
-  "Gumbel selection uses both the key score and the group size. Then it draws one image from the winning group.",
-  "Four images selected with the same key, one per prompt.",
-  "For images close to a line, also try flipping the corresponding bit.",
-  "Keep the highest keyed score among the codes tried for each image.",
-  "Average the scores and compare the result with the cutoff from clean batches.",
-];
-const marginLimit = 0.045;
-const exampleQuantile = 0.8;
-const imagesFor = (prompt) => prompt.images[model.value];
-const randomSeed = () => crypto.getRandomValues(new Uint32Array(1))[0];
-const state = { prompt: labPrompts[0], key: null, samplerSeed: randomSeed(), angles: null, step: 0, detectionStep: -1 };
-const activeAnimations = [];
-const movingTiles = [];
+// Scroll-driven walkthrough. The steps on the left set state.step; the stage on the right
+// re-lays out the same six candidate tiles for each step.
+const $ = (id) => document.getElementById(id);
+const IMG = "assets/lab/";
+const V = { w: 500, h: 400, cx: 250, cy: 200, r: 176 };
+const CODE_COLORS = ["#2f6fdf", "#e0702b", "#14937a", "#c23d8a", "#7a5bd6", "#a8820f"];
+const MARGIN = 0.045;
+const CUTOFF_QUANTILE = 0.9;
+const reduced = matchMedia("(prefers-reduced-motion: reduce)");
 
-function node(tag, className, text) {
-  const el = document.createElement(tag);
-  if (className) el.className = className;
-  if (text !== undefined) el.textContent = text;
-  return el;
-}
+const rand32 = () => crypto.getRandomValues(new Uint32Array(1))[0];
+const state = {
+  prompt: labPrompts[0], model: "sd21", planes: 2, angles: [],
+  key: rand32(), seed: rand32(), cleanSeed: rand32(),
+  step: 0, tally: [0, 0, 0, 0, 0, 0], runs: 0,
+};
+let tallyTimer = 0;
 
-function makeTile(image, text, className = "") {
-  const tile = node("figure", `tile ${className}`);
-  const img = node("img");
-  img.src = imageRoot + image.file;
-  img.alt = image.label;
-  img.width = 192;
-  img.height = 192;
-  img.dataset.image = image.file;
-  tile.append(img, node("figcaption", "", text));
-  return tile;
-}
-
-function candidates(prompt) {
-  return imagesFor(prompt).map((image, index) => ({
-    ...image,
-    label: `${prompt.text}, candidate ${index + 1}`,
-    index,
-  }));
-}
-
-function wrapImages(items, caption) {
-  const grid = node("div", "image-grid");
-  grid.append(...items.map((image, index) => makeTile(image, caption(image, index))));
-  return grid;
-}
-
-// A small repeatable mixer serves as the demo's keyed score function.
+// ---------- Method (same rules as the PR's walkthrough) ----------
 function uniform(seed, salt) {
   let bits = (seed ^ salt) >>> 0;
   bits = Math.imul(bits ^ (bits >>> 16), 0x21f0aaad);
   bits = Math.imul(bits ^ (bits >>> 15), 0x735a2d97);
   return ((bits ^ (bits >>> 15)) >>> 0) / 4294967296 + 0.5 / 4294967296;
 }
+const scoreOf = (key, code) => uniform(key, 0x202a + parseInt(code, 2));
+const imagesOf = (prompt = state.prompt) => prompt.images[state.model].map((image, index) => ({ ...image, index }));
+const marginsOf = (image) => state.angles.map((a) => image.x * Math.cos(a) + image.y * Math.sin(a));
+const codeOf = (image) => marginsOf(image).map((m) => (m >= 0 ? "1" : "0")).join("");
 
-function keyedScore(code) {
-  return uniform(state.key, 0x202a + parseInt(code, 2));
-}
-
-function margins(image) {
-  return state.angles.map((angle) => image.x * Math.cos(angle) + image.y * Math.sin(angle));
-}
-
-function codeFor(image) {
-  return margins(image).map((margin) => margin >= 0 ? "1" : "0").join("");
-}
-
-function groupImages(images) {
+function groupsOf(images) {
   const groups = new Map();
   for (const image of images) {
-    const code = codeFor(image);
+    const code = codeOf(image);
     if (!groups.has(code)) groups.set(code, []);
     groups.get(code).push(image);
   }
-  return [...groups].sort(([left], [right]) => left.localeCompare(right));
+  return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([code, members]) => ({ code, members }));
 }
 
-function select(groups, promptId) {
-  const rows = groups.map(([code, images]) => {
-    const score = keyedScore(code);
-    return { code, images, score, race: Math.log(score) / images.length };
+function race(groups, key, seed, promptId) {
+  const rows = groups.map((g) => {
+    const score = scoreOf(key, g.code);
+    return { ...g, score, value: Math.log(score) / g.members.length };
   });
-  const best = Math.max(...rows.map((row) => row.race));
-  const tied = rows.filter((row) => row.race === best);
-  const winner = tied[Math.floor(uniform(state.samplerSeed, 0x54100 + promptId) * tied.length)];
-  const index = Math.floor(uniform(state.samplerSeed, 0x7ae00 + promptId) * winner.images.length);
-  return { rows, winner, image: winner.images[index] };
+  const best = Math.max(...rows.map((r) => r.value));
+  const tied = rows.filter((r) => r.value === best);
+  const winner = tied[Math.floor(uniform(seed, 0x54100 + promptId) * tied.length)];
+  const image = winner.members[Math.floor(uniform(seed, 0x7ae00 + promptId) * winner.members.length)];
+  return { rows, winner, image };
 }
 
-function detect(image) {
-  const code = codeFor(image);
+function detectScore(image, key) {
+  const code = codeOf(image);
   const codes = [code];
-  margins(image).forEach((margin, index) => {
-    if (Math.abs(margin) < marginLimit) {
-      const flipped = code[index] === "0" ? "1" : "0";
-      codes.push(code.slice(0, index) + flipped + code.slice(index + 1));
-    }
+  marginsOf(image).forEach((m, i) => {
+    if (Math.abs(m) < MARGIN) codes.push(code.slice(0, i) + (code[i] === "0" ? "1" : "0") + code.slice(i + 1));
   });
-  return { codes, score: Math.max(...codes.map(keyedScore)) };
+  return Math.max(...codes.map((c) => scoreOf(key, c)));
 }
 
-function mean(values) {
-  return values.reduce((sum, value) => sum + value, 0) / values.length;
-}
-
-function calibrate(prompts) {
-  const clean = prompts.map((prompt) => imagesFor(prompt).map((image) => detect(image).score));
-  // Exact clean distribution for these four pools. Each clean image is drawn uniformly.
+function cutoff(prompts, key) {
+  // Exact clean distribution of the batch average when each image is a uniform candidate.
   let sums = [0];
-  for (const scores of clean) sums = sums.flatMap((sum) => scores.map((score) => sum + score));
-  sums.sort((left, right) => left - right);
-  return sums[Math.floor(exampleQuantile * sums.length)] / prompts.length;
-}
-
-function svgNode(tag, attributes, parent) {
-  const el = document.createElementNS("http://www.w3.org/2000/svg", tag);
-  for (const [name, value] of Object.entries(attributes)) el.setAttribute(name, value);
-  parent.append(el);
-  return el;
-}
-
-function renderPlanePreview(angles) {
-  const preview = byId("plane-preview");
-  preview.hidden = !angles;
-  if (!angles) return;
-
-  preview.replaceChildren();
-  const svg = svgNode("svg", { viewBox: "0 0 32 32", width: 32, height: 32 }, preview);
-  svg.setAttribute("aria-hidden", "true");
-  for (const angle of angles) {
-    const dx = 13 * Math.sin(angle);
-    const dy = 13 * Math.cos(angle);
-    svgNode("line", { x1: 16 - dx, y1: 16 - dy, x2: 16 + dx, y2: 16 + dy }, svg);
+  for (const prompt of prompts) {
+    const scores = imagesOf(prompt).map((image) => detectScore(image, key));
+    sums = sums.flatMap((s) => scores.map((x) => s + x));
   }
-  preview.append(node("span", "", `${angles.length} planes`));
-}
-
-function makePlot(images, boundaryAware = false) {
-  const plot = document.createElementNS("http://www.w3.org/2000/svg", "svg");
-  plot.setAttribute("class", "plot");
-  plot.setAttribute("viewBox", "0 0 180 180");
-  plot.setAttribute("role", "img");
-  plot.setAttribute("aria-label", images.map((image, index) => {
-    const codes = boundaryAware ? detect(image).codes : [codeFor(image)];
-    return `Image ${index + 1}, ${codes.length > 1 ? "codes" : "code"} ${codes.join(" or ")}`;
-  }).join(". "));
-  svgNode("circle", { cx: 90, cy: 90, r: 83 }, plot);
-  const clipId = boundaryAware ? "detection-disk" : "generation-disk";
-  const clip = svgNode("clipPath", { id: clipId }, plot);
-  svgNode("circle", { cx: 90, cy: 90, r: 83 }, clip);
-  const lines = svgNode("g", { "clip-path": `url(#${clipId})` }, plot);
-  for (const [index, angle] of state.angles.entries()) {
-    const dx = 83 * Math.sin(angle);
-    const dy = 83 * Math.cos(angle);
-    const ends = { x1: 90 - dx, y1: 90 - dy, x2: 90 + dx, y2: 90 + dy };
-    if (boundaryAware) svgNode("line", { ...ends, class: "band", "stroke-width": 2 * 83 * marginLimit }, lines);
-    svgNode("line", ends, lines);
-    const labelX = 90 - dx * .88 + Math.cos(angle) * 6;
-    const labelY = 90 - dy * .88 - Math.sin(angle) * 6;
-    const label = svgNode("text", { x: labelX, y: labelY, "text-anchor": "middle", class: "plane-label" }, plot);
-    label.textContent = index + 1;
-  }
-  const positions = [];
-  for (const [index, image] of images.entries()) {
-    const x = 90 + 83 * image.x;
-    const y = 90 - 83 * image.y;
-    const code = codeFor(image);
-    const label = boundaryAware ? `#${index + 1}` : `${index + 1} · ${code}`;
-    const width = boundaryAware ? 15 : 31;
-    const slots = [[0, 0], [0, -23], [0, 23], [-23, 0], [23, 0], [-24, -24], [24, 24], [0, 44], [0, -44]];
-    const targets = slots.map(([dx, dy]) => ({
-      x: Math.max(width / 2, Math.min(180 - width / 2, x + dx)),
-      y: Math.max(14, Math.min(161, y + dy)),
-    }));
-    const card = targets.find((point) => positions.every((placed) =>
-      Math.abs(point.x - placed.x) >= width || Math.abs(point.y - placed.y) >= 22
-    )) ?? targets[0];
-    positions.push(card);
-    if (card.x !== x || card.y !== y) {
-      svgNode("line", { x1: x, y1: y, x2: card.x, y2: card.y }, plot);
-      svgNode("circle", { cx: x, cy: y, r: 2 }, plot);
-    }
-    svgNode("image", {
-      x: card.x - 9, y: card.y - 9, width: 18, height: 18,
-      href: imageRoot + image.file, "data-image": image.file,
-    }, plot);
-    const text = svgNode("text", { x: card.x, y: card.y + 16, "text-anchor": "middle" }, plot);
-    text.textContent = label;
-  }
-  return plot;
-}
-
-function renderGroups(groups, selected) {
-  const list = node("div", "groups");
-  for (const [code, images] of groups) {
-    const bin = node("div", `code-bin${selected?.winner.code === code ? " winner" : ""}`);
-    bin.style.setProperty("--code-color", `hsl(${(parseInt(code, 2) * 59 + 215) % 360} 40% 47%)`);
-    const label = node("div", "bin-label");
-    label.append(node("code", "", code), node("span", "", `${images.length} ${images.length === 1 ? "image" : "images"}`));
-    if (selected) label.append(node("span", "key-score", `Key score ${keyedScore(code).toFixed(2)}`));
-    bin.append(label, wrapImages(images, (image) => `#${image.index + 1}`));
-    list.append(bin);
-  }
-  return list;
-}
-
-function renderSelection(selected) {
-  const box = node("div", "selection-result");
-  box.append(
-    node("strong", "", `Winning code ${selected.winner.code}`),
-    makeTile(selected.image, `Returned image · #${selected.image.index + 1}`, "selected-image"),
-  );
-  return box;
-}
-
-function detectionPrompts() {
-  const index = labPrompts.indexOf(state.prompt);
-  return [state.prompt, ...[4, 8, 12].map((offset) => labPrompts[(index + offset) % labPrompts.length])];
-}
-
-function renderScores(batch, results) {
-  const list = node("div", "score-list");
-  results.forEach(({ codes, score }, index) => {
-    const row = node("div", "score-row");
-    const leading = node("span", "batch-image");
-    const image = node("img");
-    image.src = imageRoot + batch[index].file;
-    image.alt = "";
-    image.dataset.image = batch[index].file;
-    leading.append(image, node("span", "", `#${index + 1}`));
-    row.append(leading, node("code", "", codes.join(" / ")), node("strong", "", score.toFixed(3)));
-    list.append(row);
-  });
-  return list;
-}
-
-function renderVerdict(results, threshold) {
-  const score = mean(results.map((item) => item.score));
-  const detected = score > threshold;
-  const box = node("div", "batch-result");
-  const track = node("span", "batch-track");
-  track.setAttribute("aria-hidden", "true");
-  const bar = node("span");
-  bar.style.width = `${score * 100}%`;
-  const tick = node("i");
-  tick.style.left = `${threshold * 100}%`;
-  track.append(bar, tick);
-  box.append(
-    track,
-    node("strong", "", detected ? "Watermark detected" : "Watermark not detected"),
-    node("p", "", `Batch average ${score.toFixed(3)} · clean threshold ${threshold.toFixed(3)}`),
-    node("p", "", "Demo cutoff at the 80th percentile of unwatermarked draws from the same pools. The score must exceed it."),
-  );
-  return box;
-}
-
-function animateFrom(previousImages, target) {
-  if (reducedMotion.matches || !target.animate) return;
-  const images = target.querySelectorAll("[data-image]");
-  if (!images.length) {
-    const contents = target.querySelector(".station-body");
-    activeAnimations.push(contents.animate(
-      [{ opacity: 0, transform: "translateY(6px)" }, { opacity: 1, transform: "none" }],
-      { duration: 280, easing: "ease-out" },
-    ));
-  }
-  for (const image of images) {
-    const start = previousImages.get(image.dataset.image);
-    const end = image.getBoundingClientRect();
-    if (!end.width) continue;
-    if (!start?.width) {
-      activeAnimations.push(image.animate([{ opacity: 0 }, { opacity: 1 }], { duration: 260 }));
-      continue;
-    }
-    const copy = node("img", "moving-tile");
-    copy.src = imageRoot + image.dataset.image;
-    copy.alt = "";
-    copy.style.width = `${end.width}px`;
-    copy.style.height = `${end.height}px`;
-    copy.style.left = `${end.left}px`;
-    copy.style.top = `${end.top}px`;
-    document.body.append(copy);
-    movingTiles.push(copy);
-    const duration = 480;
-    const transform = `translate(${start.left - end.left}px, ${start.top - end.top}px) scale(${start.width / end.width}, ${start.height / end.height})`;
-    const transfer = copy.animate(
-      [{ transform }, { transform: "none" }],
-      { duration, easing: "cubic-bezier(.15,.74,.22,1)" },
-    );
-    activeAnimations.push(transfer, image.animate(
-      [{ opacity: 0 }, { opacity: 0, offset: .96 }, { opacity: 1 }],
-      { duration },
-    ));
-    transfer.addEventListener("finish", () => copy.remove(), { once: true });
-  }
-}
-
-function renderPipeline(panel, stages, current, views, animate) {
-  const previousImages = new Map();
-  if (animate) {
-    const oldStation = panel.querySelector("[data-current]");
-    for (const image of oldStation?.querySelectorAll("[data-image]") ?? []) {
-      previousImages.set(image.dataset.image, image.getBoundingClientRect());
-    }
-  }
-
-  const stations = [...panel.querySelectorAll("[data-station]")];
-  stations.forEach((station, index) => {
-    const active = index === current;
-    station.toggleAttribute("data-current", active);
-    if (active) station.setAttribute("aria-current", "step");
-    else station.removeAttribute("aria-current");
-    station.querySelector("h3").textContent = stages[index];
-    station.querySelector(".station-body").replaceChildren(...(index <= current ? [views[index]()] : []));
-  });
-  if (animate && current >= 0) animateFrom(previousImages, stations[current]);
-}
-
-function renderGeneration(animate) {
-  const { step, prompt, key, angles } = state;
-  const images = candidates(prompt);
-  const groups = step >= 2 ? groupImages(images) : [];
-  const selected = step === 3 ? select(groups, prompt.id) : null;
-  byId("step-count").textContent = `${step + 1} / ${generationActions.length}`;
-  byId("calculation").hidden = !selected;
-  if (selected) {
-    byId("race-values").textContent = selected.rows
-      .map(({ code, race }) => `${code}: ${race.toFixed(3)}`).join(" · ");
-  }
-  previous.disabled = step === 0;
-  next.textContent = step === 2 && key === null ? "Draw secret key" : generationActions[step];
-
-  renderPipeline(byId("watermarking"), generationStages, stationForStep[step], [
-    () => wrapImages(images, (image) => `#${image.index + 1}`),
-    () => step === 1 ? makePlot(images) : renderGroups(groups, selected),
-    () => renderSelection(selected),
-  ], animate);
-  status.textContent = step === 2 && groups.length === 1
-    ? "These images all share one code. Try drawing new hyperplanes or choosing another prompt to see multiple groups."
-    : step === 1
-      ? `${angles.length} hyperplanes give each image a ${angles.length}-bit code. Each line splits the plot into a 0 side and a 1 side.`
-      : stepNotes[step];
-}
-
-function renderDetection(animate) {
-  const step = state.detectionStep;
-  const started = step >= 0;
-  byId("detection-count").textContent = started ? `${step + 1} / ${detectionActions.length}` : "";
-  detectionPrevious.disabled = step <= 0;
-  detectionNext.textContent = started ? detectionActions[step] : "Start detection";
-  byId("detection-status").textContent = started ? stepNotes[step + 4] : "Use the same key and hyperplanes to check a batch of four images.";
-
-  const prompts = started ? detectionPrompts() : [];
-  const batch = prompts.map((prompt) => select(groupImages(candidates(prompt)), prompt.id).image);
-  const results = batch.map(detect);
-  renderPipeline(byId("detection"), detectionStages, started ? stationForStep[step] : -1, [
-    () => wrapImages(batch, (_, index) => `Image ${index + 1}`),
-    () => step === 1 ? makePlot(batch, true) : renderScores(batch, results),
-    () => renderVerdict(results, calibrate(prompts)),
-  ], animate);
-}
-
-function render(animatedPanel) {
-  activeAnimations.splice(0).forEach((animation) => animation.cancel());
-  movingTiles.splice(0).forEach((tile) => tile.remove());
-  const { prompt, key, angles } = state;
-  byId("prompt-name").textContent = prompt.text;
-  byId("prompt-preview").src = imageRoot + imagesFor(prompt)[0].file;
-  byId("key-value").textContent = key === null ? "" : `0x${key.toString(16).padStart(8, "0")}`;
-  byId("draw-key").textContent = key === null ? "Draw secret key" : "Redraw secret key";
-  renderPlanePreview(angles);
-  byId("draw-planes").textContent = angles ? "Redraw hyperplanes" : "Draw hyperplanes";
-  renderGeneration(animatedPanel === "watermarking");
-  renderDetection(animatedPanel === "detection");
-}
-
-function drawKey() {
-  state.key = randomSeed();
-  state.samplerSeed = randomSeed();
+  sums.sort((a, b) => a - b);
+  return sums[Math.floor(CUTOFF_QUANTILE * sums.length)] / prompts.length;
 }
 
 function drawPlanes() {
-  const count = Number(byId("plane-count").value);
-  const seeds = crypto.getRandomValues(new Uint32Array(count + 2));
-  const turn = seeds[0] / 4294967296 * Math.PI;
-  // Space the lines around the plot so each is visible. The frame and bit orientations are random.
-  state.angles = Array.from({ length: count }, (_, index) => {
-    const jitter = (seeds[index + 2] / 4294967296 - .5) * .55;
-    const sign = (seeds[1] >> index) & 1;
-    return turn + (index + jitter) * Math.PI / count + sign * Math.PI;
+  const seeds = crypto.getRandomValues(new Uint32Array(state.planes + 2));
+  const turn = (seeds[0] / 4294967296) * Math.PI;
+  state.angles = Array.from({ length: state.planes }, (_, i) => {
+    const jitter = (seeds[i + 2] / 4294967296 - 0.5) * 0.55;
+    return turn + ((i + jitter) * Math.PI) / state.planes + ((seeds[1] >> i) & 1) * Math.PI;
   });
 }
 
-function updateKey() {
-  drawKey();
-  if (state.step === 3) state.step = 2;
-  state.detectionStep = -1;
-  render();
+// ---------- Helpers ----------
+const el = (tag, cls, text) => {
+  const n = document.createElement(tag);
+  if (cls) n.className = cls;
+  if (text !== undefined) n.textContent = text;
+  return n;
+};
+const pctX = (x) => `${(x / V.w) * 100}%`;
+const pctY = (y) => `${(y / V.h) * 100}%`;
+const hex = (key) => `0x${key.toString(16).padStart(8, "0")}`;
+const toBoard = (image) => ({ x: V.cx + V.r * image.x * 0.92, y: V.cy - V.r * image.y * 0.92 });
+
+function colorMap(groups) {
+  return new Map(groups.map((g, i) => [g.code, CODE_COLORS[i % CODE_COLORS.length]]));
 }
 
-function updatePlanes() {
-  drawPlanes();
-  state.step = 1;
-  state.detectionStep = -1;
-  render("watermarking");
-}
-
-function resetWalkthroughs() {
-  state.step = 0;
-  state.detectionStep = -1;
-  render();
-}
-
-byId("draw-key").addEventListener("click", updateKey);
-byId("draw-planes").addEventListener("click", updatePlanes);
-byId("plane-count").addEventListener("change", () => {
-  if (state.angles) updatePlanes();
-});
-previous.addEventListener("click", () => {
-  state.step -= 1;
-  render("watermarking");
-});
-next.addEventListener("click", () => {
-  if (state.step === 0 && !state.angles) {
-    updatePlanes();
-  } else if (state.step === 2 && state.key === null) {
-    updateKey();
-    status.textContent = "Secret key drawn. Use it to score the code groups and select an image.";
-  } else {
-    state.step = (state.step + 1) % generationActions.length;
-    render("watermarking");
+function placeOnPlot(images, size) {
+  // Nearest free spot, searched in rings around the true point. Leave room for the code label.
+  const wide = size + 8;
+  const tall = size + 22;
+  const slots = [[0, 0]];
+  for (let ring = 1; ring <= 4; ring += 1) {
+    for (let k = 0; k < 12; k += 1) {
+      const t = (k / 12) * 2 * Math.PI;
+      slots.push([Math.cos(t) * ring * wide * 0.7, Math.sin(t) * ring * tall * 0.7]);
+    }
   }
-});
-detectionPrevious.addEventListener("click", () => {
-  state.detectionStep -= 1;
-  render("detection");
-});
-detectionNext.addEventListener("click", () => {
-  if (state.key === null) drawKey();
-  if (!state.angles) drawPlanes();
-  state.detectionStep = (state.detectionStep + 1) % detectionActions.length;
-  render("detection");
+  const placed = [];
+  return images.map((image) => {
+    const p = toBoard(image);
+    const options = slots.map(([dx, dy]) => ({
+      x: Math.min(V.w - size / 2 - 6, Math.max(size / 2 + 6, p.x + dx)),
+      y: Math.min(V.h - size / 2 - 22, Math.max(size / 2 + 6, p.y + dy)),
+    }));
+    const spot = options.find((o) => placed.every((q) => Math.abs(o.x - q.x) >= wide || Math.abs(o.y - q.y) >= tall)) ?? options[0];
+    placed.push(spot);
+    return { ...spot, anchor: p };
+  });
+}
+
+// ---------- Stage ----------
+const board = $("board");
+const tilesLayer = $("tiles");
+const overlay = $("overlay");
+const lines = $("lines");
+const regions = $("regions");
+const caption = $("stage-caption");
+const tiles = Array.from({ length: 6 }, () => {
+  const fig = el("figure", "tile");
+  const img = el("img");
+  img.width = 176;
+  img.height = 176;
+  img.alt = "";
+  fig.append(img, el("figcaption"));
+  tilesLayer.append(fig);
+  return fig;
 });
 
-function renderPromptOptions() {
-  const options = labPrompts.map((prompt) => {
-    const button = node("button", "prompt-option control");
+function setTile(tile, { x, y, s, o = 1, label = "", color = "", winner = false }) {
+  tile.style.left = pctX(x - s / 2);
+  tile.style.top = pctY(y - s / 2);
+  tile.style.width = pctX(s);
+  tile.style.opacity = o;
+  tile.classList.toggle("winner", winner);
+  const cap = tile.querySelector("figcaption");
+  cap.textContent = label;
+  cap.style.background = color;
+}
+
+function svg(tag, attrs) {
+  const n = document.createElementNS("http://www.w3.org/2000/svg", tag);
+  for (const [k, v] of Object.entries(attrs)) n.setAttribute(k, v);
+  lines.append(n);
+  return n;
+}
+
+function drawCircle(withLines) {
+  svg("circle", { cx: V.cx, cy: V.cy, r: V.r, fill: withLines ? "none" : "#fff", stroke: "#c9d0db", "stroke-width": 1 });
+  if (!withLines) return;
+  for (const angle of state.angles) {
+    // Points with x·cos + y·sin = 0 lie along direction (-sin, cos).
+    const dx = V.r * -Math.sin(angle);
+    const dy = -V.r * Math.cos(angle);
+    svg("line", { x1: V.cx - dx, y1: V.cy - dy, x2: V.cx + dx, y2: V.cy + dy, stroke: "#14161b", "stroke-width": 1.2, "stroke-dasharray": "5 4" });
+  }
+}
+
+function paintRegions(colors) {
+  const ctx = regions.getContext("2d");
+  const scale = regions.width / V.w;
+  ctx.clearRect(0, 0, regions.width, regions.height);
+  const cell = 2;
+  for (let y = V.cy - V.r; y < V.cy + V.r; y += cell) {
+    for (let x = V.cx - V.r; x < V.cx + V.r; x += cell) {
+      const px = (x + cell / 2 - V.cx) / (V.r * 0.92);
+      const py = -(y + cell / 2 - V.cy) / (V.r * 0.92);
+      if ((x + cell / 2 - V.cx) ** 2 + (y + cell / 2 - V.cy) ** 2 > V.r ** 2) continue;
+      const color = colors.get(codeOf({ x: px, y: py }));
+      ctx.fillStyle = color ? `${color}2e` : "#ffffff";
+      ctx.fillRect(Math.round(x * scale), Math.round(y * scale), cell * scale, cell * scale);
+    }
+  }
+}
+
+function ov(cls, x, y, w) {
+  const n = el("div", `ov ${cls}`);
+  n.style.left = pctX(x);
+  n.style.top = pctY(y);
+  if (w !== undefined) n.style.width = pctX(w);
+  overlay.append(n);
+  return n;
+}
+
+function render() {
+  const images = imagesOf();
+  const groups = groupsOf(images);
+  const colors = colorMap(groups);
+  const pick = race(groups, state.key, state.seed, state.prompt.id);
+  const step = state.step;
+
+  tiles.forEach((tile, i) => {
+    const img = tile.querySelector("img");
+    const src = IMG + images[i].file;
+    if (!img.src.endsWith(src)) img.src = src;
+    img.alt = `${state.prompt.text}, candidate ${i + 1}`;
+  });
+  lines.replaceChildren();
+  overlay.replaceChildren();
+  regions.style.opacity = step === 2 ? 1 : 0;
+  board.classList.toggle("is-detect", step === 6);
+  document.querySelectorAll("[data-key-value]").forEach((n) => (n.textContent = `key ${hex(state.key)}`));
+
+  const views = [viewGrid, viewPlot, viewCodes, viewScores, viewPick, viewFair, viewDetect];
+  views[step]({ images, groups, colors, pick });
+}
+
+function viewGrid({ images }) {
+  const s = 128;
+  images.forEach((_, i) => setTile(tiles[i], { x: V.cx + ((i % 3) - 1) * (s + 16), y: V.cy + (i < 3 ? -1 : 1) * (s / 2 + 8), s, label: `#${i + 1}`, color: "#14161b" }));
+  caption.innerHTML = `Six samples of <strong>“${escapeHtml(state.prompt.text)}”</strong> from ${modelName()}.`;
+}
+
+function viewPlot({ images }) {
+  drawCircle(false);
+  const spots = placeOnPlot(images, 62);
+  spots.forEach((p, i) => {
+    if (p.x !== p.anchor.x || p.y !== p.anchor.y) {
+      svg("line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#9aa3b2", "stroke-width": 1 });
+    }
+    svg("circle", { cx: p.anchor.x, cy: p.anchor.y, r: 3, fill: "#14161b" });
+    setTile(tiles[i], { x: p.x, y: p.y, s: 62 });
+  });
+  caption.textContent = "Each dot is one image's embedding. Nearby dots are images the encoder sees as similar.";
+}
+
+function viewCodes({ images, groups, colors }) {
+  paintRegions(colors);
+  drawCircle(true);
+  const spots = placeOnPlot(images, 56);
+  spots.forEach((p, i) => {
+    svg("circle", { cx: p.anchor.x, cy: p.anchor.y, r: 3, fill: "#14161b" });
+    if (p.x !== p.anchor.x || p.y !== p.anchor.y) svg("line", { x1: p.anchor.x, y1: p.anchor.y, x2: p.x, y2: p.y, stroke: "#9aa3b2", "stroke-width": 1 });
+    const code = codeOf(images[i]);
+    setTile(tiles[i], { x: p.x, y: p.y, s: 56, label: code, color: colors.get(code) });
+  });
+  caption.innerHTML = `<strong>${state.planes} lines</strong> cut the plot into ${2 * state.planes} regions, each with its own code. These six images fall into <strong>${groups.length}</strong> of them.` +
+    (groups.length === 1 ? " Redraw the lines to split them up." : "");
+}
+
+function rowLayout(n) {
+  const rowH = Math.min(78, 340 / n);
+  const top = V.cy - (n * rowH) / 2 + rowH / 2;
+  return { rowH, y: (i) => top + i * rowH, size: Math.min(60, rowH - 12) };
+}
+
+function viewScores({ groups, colors }, highlight = null) {
+  const { y, size: rowSize } = rowLayout(groups.length);
+  const most = Math.max(...groups.map((g) => g.members.length));
+  const size = Math.min(rowSize, 186 / most - 6);
+  groups.forEach((g, i) => {
+    const row = ov("ov-row", 28, y(i));
+    const chip = el("span", "chip");
+    chip.style.background = colors.get(g.code);
+    const text = el("span");
+    text.append(el("span", "ov-code", g.code), el("br"), el("span", "ov-muted", `${g.members.length} ${g.members.length === 1 ? "image" : "images"}`));
+    row.append(chip, text);
+    g.members.forEach((image, j) => setTile(tiles[image.index], { x: 140 + size / 2 + j * (size + 6), y: y(i), s: size }));
+    const score = scoreOf(state.key, g.code);
+    const bar = ov("ov-bar", 338, y(i), 100);
+    const fill = el("span");
+    fill.style.width = `${score * 100}%`;
+    fill.style.background = colors.get(g.code);
+    bar.append(fill);
+    ov("ov-score", 446, y(i)).textContent = score.toFixed(2);
+  });
+  ov("ov-muted", 338, y(0) - 38).textContent = "Key score";
+  const top = groups.reduce((a, b) => (scoreOf(state.key, b.code) > scoreOf(state.key, a.code) ? b : a));
+  caption.innerHTML = `With key <code>${hex(state.key)}</code>, code <strong>${top.code}</strong> scores highest (${scoreOf(state.key, top.code).toFixed(2)}).`;
+}
+
+function viewPick({ images, pick, colors }) {
+  const big = 196;
+  const others = images.filter((im) => im !== pick.image);
+  setTile(tiles[pick.image.index], { x: V.cx, y: 158, s: big, winner: true });
+  others.forEach((im, j) => setTile(tiles[im.index], { x: V.cx + (j - 2) * 54, y: 356, s: 44, o: 0.35 }));
+  const label = ov("ov-label", V.cx, 266);
+  const chip = el("span", "chip");
+  chip.style.background = colors.get(pick.winner.code);
+  label.append(chip, " ", el("strong", "", `Returned: #${pick.image.index + 1}`), ` · code ${pick.winner.code}`);
+  $("race-values").textContent = pick.rows.map((r) => `${r.code}: log(${r.score.toFixed(2)}) / ${r.members.length} = ${r.value.toFixed(2)}`).join("\n");
+  $("race-values").style.whiteSpace = "pre-line";
+  const size = pick.winner.members.length;
+  caption.innerHTML = `Code <strong>${pick.winner.code}</strong> wins the race` +
+    (size > 1 ? `, and one of its ${size} images is drawn at random.` : ".") +
+    " The other candidates are discarded.";
+}
+
+function viewFair({ images }) {
+  const s = 62;
+  const base = 350;
+  const maxH = 210;
+  const total = Math.max(1, state.runs);
+  images.forEach((_, i) => {
+    const x = V.cx + (i - 2.5) * 74;
+    setTile(tiles[i], { x, y: 62, s });
+    const share = state.tally[i] / total;
+    const bar = ov("ov-tally", x, base, 30);
+    bar.style.top = "auto";
+    bar.style.bottom = pctY(V.h - base);
+    bar.style.height = pctY(Math.min(maxH, (share / 0.3) * maxH));
+    ov("ov-pct", x, base + 8).textContent = state.runs ? `${Math.round(share * 100)}%` : "";
+  });
+  const expectY = base - (1 / 6 / 0.3) * maxH;
+  const line = ov("ov-expect", 36, expectY, V.w - 72);
+  line.append(el("span", "", "fair share, 1 in 6"));
+  caption.innerHTML = state.runs
+    ? `<strong>${state.runs.toLocaleString()} random keys.</strong> Each candidate was returned about one time in six.`
+    : "Running random keys…";
+}
+
+function detectionPrompts() {
+  const at = labPrompts.indexOf(state.prompt);
+  return [state.prompt, ...[5, 10, 15].map((k) => labPrompts[(at + k) % labPrompts.length])];
+}
+
+function viewDetect() {
+  tiles.forEach((tile) => setTile(tile, { x: V.cx, y: V.cy, s: 120, o: 0 }));
+  const prompts = detectionPrompts();
+  const marked = prompts.map((p) => race(groupsOf(imagesOf(p)), state.key, state.seed, p.id).image);
+  const clean = prompts.map((p, i) => {
+    const ims = imagesOf(p);
+    return ims[Math.floor(uniform(state.cleanSeed, 0x3c1 + i * 977 + p.id) * ims.length)];
+  });
+  const cut = cutoff(prompts, state.key);
+  const panel = el("div", "detect");
+  const batch = (title, list, cls) => {
+    const scores = list.map((im) => detectScore(im, state.key));
+    const avg = scores.reduce((a, b) => a + b, 0) / scores.length;
+    const box = el("div", `batch ${cls}`);
+    const thumbs = el("div", "batch-thumbs");
+    list.forEach((im, i) => {
+      const fig = el("figure");
+      const img = el("img");
+      img.src = IMG + im.file;
+      img.alt = `${prompts[i].text}`;
+      fig.append(img, el("figcaption", "", scores[i].toFixed(2)));
+      thumbs.append(fig);
+    });
+    const avgBox = el("div", "batch-avg");
+    const verdict = cls === "marked"
+      ? (avg > cut ? "Watermark detected" : "Missed with this key")
+      : (avg > cut ? "False alarm" : "Not flagged");
+    avgBox.append(el("strong", "", avg.toFixed(2)), el("span", "", verdict));
+    box.append(el("h4", "", title), thumbs, avgBox);
+    return { box, avg };
+  };
+  const a = batch("Selected with your key", marked, "marked");
+  const b = batch("Plain samples, no watermark", clean, "clean");
+  const meter = el("div", "meter");
+  meter.innerHTML = `<div class="meter-track"></div><div class="meter-ends"><span>0</span><span>1</span></div>`;
+  const cutEl = el("div", "meter-cut");
+  cutEl.style.left = `${cut * 100}%`;
+  const dot = (avg, cls) => {
+    const d = el("div", `meter-dot ${cls}`);
+    d.style.left = `${avg * 100}%`;
+    return d;
+  };
+  meter.append(cutEl, dot(b.avg, "clean"), dot(a.avg, "marked"));
+  const legend = el("p", "meter-legend");
+  legend.innerHTML = `<span><i class="meter-dot marked"></i>your batch</span><span><i class="meter-dot clean"></i>plain batch</span><span><i class="meter-cut"></i>cutoff ${cut.toFixed(2)}</span>`;
+  const meterBox = el("div", "meter-box");
+  meterBox.append(meter, legend);
+  panel.append(a.box, b.box, meterBox);
+  overlay.append(panel);
+  caption.innerHTML = `A batch is flagged when its average beats the cutoff, set so only 10% of plain batches from these prompts pass. ` +
+    `With ${state.planes} lines and 4 images the demo is noisy. The paper uses longer codes and larger batches.`;
+}
+
+// ---------- Fairness tally ----------
+function runTally(count) {
+  cancelAnimationFrame(tallyTimer);
+  const images = imagesOf();
+  const groups = groupsOf(images);
+  let left = count;
+  const tick = () => {
+    const n = reduced.matches ? left : Math.min(left, 40);
+    for (let i = 0; i < n; i += 1) {
+      state.tally[race(groups, rand32(), rand32(), state.prompt.id).image.index] += 1;
+    }
+    state.runs += n;
+    left -= n;
+    if (state.step === 5) render();
+    if (left > 0) tallyTimer = requestAnimationFrame(tick);
+  };
+  tick();
+}
+function resetTally() {
+  cancelAnimationFrame(tallyTimer);
+  state.tally = [0, 0, 0, 0, 0, 0];
+  state.runs = 0;
+}
+
+// ---------- Controls ----------
+const modelSelect = $("model");
+const modelName = () => modelSelect.selectedOptions[0].textContent;
+const escapeHtml = (s) => s.replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" })[c]);
+
+function setStep(step) {
+  if (step === state.step) return;
+  state.step = step;
+  document.querySelectorAll(".step").forEach((s) => s.classList.toggle("is-active", Number(s.dataset.step) === step));
+  if (step === 5 && state.runs === 0) runTally(1000);
+  render();
+}
+
+function updatePrompt() {
+  $("prompt-name").textContent = state.prompt.text;
+  $("prompt-preview").src = IMG + state.prompt.images[state.model][0].file;
+  resetTally();
+  if (state.step === 5) runTally(1000);
+  render();
+}
+
+modelSelect.addEventListener("change", () => {
+  state.model = modelSelect.value;
+  updatePrompt();
+});
+
+document.querySelectorAll("[data-planes]").forEach((button) => {
+  button.addEventListener("click", () => {
+    state.planes = Number(button.dataset.planes);
+    document.querySelectorAll("[data-planes]").forEach((b) => b.setAttribute("aria-pressed", String(b === button)));
+    drawPlanes();
+    resetTally();
+    render();
+  });
+});
+
+document.querySelectorAll("[data-action]").forEach((button) => {
+  button.addEventListener("click", () => {
+    const action = button.dataset.action;
+    if (action === "planes") { drawPlanes(); resetTally(); }
+    if (action === "key") { state.key = rand32(); state.seed = rand32(); }
+    if (action === "clean") state.cleanSeed = rand32();
+    if (action === "tally") { runTally(1000); return; }
+    render();
+  });
+});
+
+const dialog = $("prompt-dialog");
+$("open-prompts").addEventListener("click", () => {
+  const grid = $("prompt-grid");
+  grid.replaceChildren(...labPrompts.map((prompt) => {
+    const button = el("button", "prompt-option");
     button.type = "button";
-    button.setAttribute("aria-pressed", String(state.prompt === prompt));
-    const preview = node("img");
-    preview.src = imageRoot + imagesFor(prompt)[0].file;
-    preview.alt = "";
-    preview.loading = "lazy";
-    button.append(preview, node("span", "", prompt.text));
+    button.setAttribute("aria-pressed", String(prompt === state.prompt));
+    const img = el("img");
+    img.src = IMG + prompt.images[state.model][0].file;
+    img.alt = "";
+    img.loading = "lazy";
+    button.append(img, el("span", "", prompt.text));
     button.addEventListener("click", () => {
       state.prompt = prompt;
       dialog.close();
-      resetWalkthroughs();
+      updatePrompt();
     });
     return button;
-  });
-  promptGrid.replaceChildren(...options);
-}
-
-model.addEventListener("change", resetWalkthroughs);
-byId("open-prompts").addEventListener("click", () => {
-  renderPromptOptions();
+  }));
   dialog.showModal();
-  promptGrid.querySelector('[aria-pressed="true"]').focus();
+  grid.querySelector('[aria-pressed="true"]').focus();
 });
-render();
 
-const copy = document.querySelector("#copy-citation");
-const citation = document.querySelector("#citation-text");
+// Activate the step closest to the trigger line. Recomputed on every scroll frame, so jumps
+// (anchor links, fast scrolling) land on the right step.
+const narrow = matchMedia("(max-width: 980px)");
+const stepEls = [...document.querySelectorAll(".step")];
+function syncStep() {
+  const line = innerHeight * (narrow.matches ? 0.72 : 0.5);
+  let best = 0;
+  let bestDistance = Infinity;
+  for (const s of stepEls) {
+    const r = s.getBoundingClientRect();
+    const distance = r.top > line ? r.top - line : r.bottom < line ? line - r.bottom : 0;
+    if (distance < bestDistance) { bestDistance = distance; best = Number(s.dataset.step); }
+  }
+  setStep(best);
+}
+addEventListener("scroll", syncStep, { passive: true });
+addEventListener("resize", syncStep);
+
+drawPlanes();
+document.querySelector('.step[data-step="0"]').classList.add("is-active");
+render();
+syncStep();
+
+const copy = $("copy-citation");
+const citation = $("citation-text");
 copy.addEventListener("click", async () => {
   try {
     await navigator.clipboard.writeText(citation.textContent);
@@ -500,9 +503,8 @@ copy.addEventListener("click", async () => {
   } catch {
     const range = document.createRange();
     range.selectNodeContents(citation);
-    const selection = window.getSelection();
-    selection.removeAllRanges();
-    selection.addRange(range);
+    getSelection().removeAllRanges();
+    getSelection().addRange(range);
     copy.textContent = "Text selected";
   }
 });
