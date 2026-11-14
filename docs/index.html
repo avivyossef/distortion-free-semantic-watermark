@@ -17,7 +17,7 @@
   <a class="skip" href="#main">Skip to content</a>
   <header class="topbar wrap">
     <nav aria-label="Page">
-      <a href="#watermarking">Watermarking</a>
+      <a href="#generation">Generation</a>
       <a href="#detection">Detection</a>
       <a href="#about">About</a>
       <a href="#citation">Citation</a>
@@ -33,10 +33,11 @@
         <a class="link-button primary" href="https://github.com/avivyossef/distortion-free-semantic-watermark">Code on GitHub</a>
         <span class="link-button soon" aria-disabled="true">Encoder weights · coming soon</span>
       </div>
+      <p class="tldr"><strong>TL;DR</strong> A distortion-free, sampling-based watermarking method for generative models that requires only black-box access to any generator and any semantic encoder.</p>
     </section>
 
-    <section class="part wrap" id="watermarking" aria-labelledby="watermarking-title">
-      <h2 id="watermarking-title">Watermarking</h2>
+    <section class="part wrap" id="generation" aria-labelledby="generation-title">
+      <h2 id="generation-title">Generation</h2>
       <div class="story" data-section="gen">
         <div class="steps">
           <article class="step" data-step="0">
@@ -128,13 +129,13 @@
           </article>
           <article class="step" data-step="2">
             <p class="step-num">3</p>
-            <h3>Score its region with the same secret key</h3>
+            <h3>Score its region with the same secret key and compare it to a threshold</h3>
           </article>
         </div>
 
         <div class="stage-wrap">
           <div class="stage" id="det-stage">
-            <p class="stage-note">Same prompt, model, hyperplanes and key as above.</p>
+            <p class="stage-note">Same prompt, model, hyperplanes and key as in Generation.</p>
             <div class="board" data-board>
               <canvas data-regions width="1000" height="800" aria-hidden="true"></canvas>
               <svg data-lines viewBox="0 0 500 400" aria-hidden="true"></svg>
@@ -165,11 +166,11 @@
         </div>
         <div>
           <h3>Distortion-free</h3>
-          <p>For any prompt, averaging over random secret keys gives exactly the same distribution of images as sampling the generator directly. No pixel is changed.</p>
+          <p>For any prompt, averaging over random secret keys gives exactly the same distribution of images as sampling the generator directly.</p>
         </div>
         <div>
           <h3>Survives edits</h3>
-          <p>Cropping, resizing, and compression change pixels but not what an image depicts. The encoder is trained to describe an image and its edited versions alike, so the image's region, or a neighbouring one, still carries the signal.</p>
+          <p>Cropping, resizing, and compression change pixels but not what an image depicts. The encoder is trained to describe an image and its edited versions alike, so edited images stay in the same semantic region and keep the watermark.</p>
         </div>
       </div>
     </section>

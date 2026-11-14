@@ -52,7 +52,9 @@ function detect(image) {
   });
   const score = Math.max(...codes.map(scoreOf));
   // Without the watermark each region's score is uniform, so P(max of k scores > s) = 1 - s^k.
-  return { code, codes, score, p: 1 - score ** codes.length };
+  // Threshold: a plain image passes with probability DETECT_P.
+  const threshold = (1 - DETECT_P) ** (1 / codes.length);
+  return { code, codes, score, threshold, p: 1 - score ** codes.length };
 }
 
 function drawPlanes() {
@@ -282,7 +284,7 @@ const detViews = [
   function take(stage, { image }) {
     setTile(stage.tiles[0], { image, x: V.cx, y: V.cy, s: 250 });
     stage.caption.textContent = state.check === "marked"
-      ? "The image returned by the watermarking steps above."
+      ? "The image returned in Generation."
       : "An ordinary sample from the generator, never selected with the key.";
   },
   function locate(stage, { image, result }) {
@@ -298,14 +300,17 @@ const detViews = [
   },
   function score(stage, { image, result }) {
     setTile(stage.tiles[0], { image, x: 110, y: 150, s: 150 });
-    const detected = result.p < DETECT_P;
+    const detected = result.score > result.threshold;
     ov(stage, "ov-muted", 220, 92).textContent = `Key score of region ${result.codes.join(" / ")}`;
     scoreBar(stage, 220, 120, 210, result.score, "#14161b");
+    const tick = ov(stage, "ov-thresh", 220 + 210 * result.threshold, 120);
+    tick.append(el("span", "", `threshold ${result.threshold.toFixed(2)}`));
     ov(stage, "ov-score", 440, 120).textContent = result.score.toFixed(2);
-    const verdict = ov(stage, "ov-verdict", 220, 168);
+    const verdict = ov(stage, "ov-verdict", 220, 176);
     verdict.append(el("strong", "", detected ? "Watermark detected" : "No watermark detected"),
-      el("span", "", `A plain image scores this high ${Math.round(result.p * 100)}% of the time.`));
-    stage.caption.textContent = "One image is weak evidence, so a wrong call is possible here. In practice, scores from a batch of images are combined.";
+      el("span", "", `Score ${result.score.toFixed(2)} is ${detected ? "above" : "below"} the threshold.`));
+    stage.caption.textContent = `The threshold is set so only ${Math.round(DETECT_P * 100)}% of plain images pass it. ` +
+      "One image is weak evidence, so mistakes happen here; in practice, scores from a batch of images are combined.";
   },
 ];
 
