@@ -114,7 +114,13 @@
         <div class="steps">
           <article class="step" data-step="0">
             <p class="step-num">1</p>
-            <h3>Take a watermarked image</h3>
+            <h3>Take an image</h3>
+            <div class="step-controls">
+              <div class="segmented" role="group" aria-label="Image to check">
+                <button type="button" data-check="marked" aria-pressed="true">Watermarked</button>
+                <button type="button" data-check="plain" aria-pressed="false">Not watermarked</button>
+              </div>
+            </div>
           </article>
           <article class="step" data-step="1">
             <p class="step-num">2</p>
@@ -147,8 +153,6 @@
         <img src="assets/method.svg" alt="The generator returns candidates, an encoder groups them by code, and a secret key guides selection." width="1000" height="660">
       </figure>
     </noscript>
-
-    <p class="demo-note wrap">Pre-generated candidates, shown in a simplified 2D projection centred on each prompt. The paper hashes full encoder embeddings.</p>
 
     <section class="section wrap" id="about" aria-labelledby="about-title">
       <h2 id="about-title">About the method</h2>

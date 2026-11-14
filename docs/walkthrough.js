@@ -10,7 +10,7 @@ const DETECT_P = 0.3;
 const rand32 = () => crypto.getRandomValues(new Uint32Array(1))[0];
 const state = {
   prompt: labPrompts[0], model: "sd21", planes: 2, angles: [],
-  key: rand32(), seed: rand32(),
+  key: rand32(), seed: rand32(), check: "marked",
 };
 
 // ---------- Method ----------
@@ -275,24 +275,31 @@ const genViews = [
 // ---------- Detection ----------
 const det = makeStage($("det-stage"), 1);
 
-// A worked example: the first fixed key whose watermarked image clears the threshold.
-function detectionExample(groups) {
+// A worked example: the first fixed key whose watermarked image clears the threshold
+// while another candidate (a plain sample) stays below it.
+function detectionExample(images, groups) {
   let fallback;
   for (let i = 1; i <= 400; i += 1) {
     const key = Math.imul(i, 0x9e3779b9) >>> 0;
     const seed = Math.imul(i, 0x85ebca6b) >>> 0;
-    const image = race(groups, key, seed).image;
-    const result = detect(image, key);
-    fallback ??= { key, image, result };
-    if (result.score > result.threshold) return { key, image, result };
+    const marked = race(groups, key, seed).image;
+    const markedResult = detect(marked, key);
+    // Prefer another candidate of this prompt; otherwise any image generated for another prompt.
+    const others = labPrompts.filter((p) => p !== state.prompt).flatMap((p) => p.images[state.model].map((im, index) => ({ ...im, index })));
+    const plain = [...images.filter((im) => im !== marked), ...others].find((im) => {
+      const r = detect(im, key);
+      return r.score <= r.threshold;
+    });
+    fallback ??= { key, marked, plain: plain ?? images.find((im) => im !== marked) ?? marked };
+    if (markedResult.score > markedResult.threshold && plain) return { key, marked, plain };
   }
   return fallback;
 }
 
 const detViews = [
-  function take(stage, { image, exampleKey }) {
+  function take(stage, { image }) {
     setTile(stage.tiles[0], { image, x: V.cx, y: V.cy, s: 250 });
-    stage.caption.innerHTML = `An image returned by Generation with key <code>${hex(exampleKey)}</code>.`;
+    stage.caption.textContent = "";
   },
   function locate(stage, { image, result }) {
     const colors = new Map(result.codes.map((c, i) => [c, i === 0 ? "#14161b" : "#9aa3b2"]));
@@ -316,8 +323,7 @@ const detViews = [
     const verdict = ov(stage, "ov-verdict", 220, 176);
     verdict.append(el("strong", "", detected ? "Watermark detected" : "No watermark detected"),
       el("span", "", `Score ${result.score.toFixed(2)} is ${detected ? "above" : "below"} the threshold.`));
-    stage.caption.textContent = `The threshold lets ${Math.round(DETECT_P * 100)}% of plain images through, a loose demo setting. ` +
-      "With one image the evidence is weak, so in practice scores from a batch of images are combined.";
+    stage.caption.textContent = "";
   },
 ];
 
@@ -331,8 +337,9 @@ function render() {
   const images = imagesOf();
   const groups = groupsOf(images);
   const chosen = race(groups);
-  const example = detectionExample(groups);
-  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, image: example.image, result: example.result, exampleKey: example.key };
+  const example = detectionExample(images, groups);
+  const image = state.check === "marked" ? example.marked : example.plain;
+  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, image, result: detect(image, example.key) };
   document.querySelectorAll("[data-key-value]").forEach((n) => (n.textContent = `key ${hex(state.key)}`));
   for (const section of sections) {
     clear(section.stage);
@@ -381,6 +388,12 @@ document.querySelectorAll("[data-planes]").forEach((button) => button.addEventLi
   state.planes = Number(button.dataset.planes);
   pressOnly("[data-planes]", button);
   drawPlanes();
+  render();
+}));
+
+document.querySelectorAll("[data-check]").forEach((button) => button.addEventListener("click", () => {
+  state.check = button.dataset.check;
+  pressOnly("[data-check]", button);
   render();
 }));
 
