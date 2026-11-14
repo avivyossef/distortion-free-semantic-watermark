@@ -5,12 +5,12 @@ const IMG = "assets/lab/";
 const V = { w: 500, h: 400, cx: 250, cy: 200, r: 176 };
 const CODE_COLORS = ["#2f6fdf", "#e0702b", "#14937a", "#c23d8a", "#7a5bd6", "#a8820f"];
 const MARGIN = 0.045;
-const DETECT_P = 0.1;
+const DETECT_P = 0.3;
 
 const rand32 = () => crypto.getRandomValues(new Uint32Array(1))[0];
 const state = {
   prompt: labPrompts[0], model: "sd21", planes: 2, angles: [],
-  key: rand32(), seed: rand32(), plainSeed: rand32(), check: "marked",
+  key: rand32(), seed: rand32(),
 };
 
 // ---------- Method ----------
@@ -20,7 +20,7 @@ function uniform(seed, salt) {
   bits = Math.imul(bits ^ (bits >>> 15), 0x735a2d97);
   return ((bits ^ (bits >>> 15)) >>> 0) / 4294967296 + 0.5 / 4294967296;
 }
-const scoreOf = (code) => uniform(state.key, 0x202a + parseInt(code, 2));
+const scoreOf = (code, key = state.key) => uniform(key, 0x202a + parseInt(code, 2));
 const imagesOf = () => state.prompt.images[state.model].map((image, index) => ({ ...image, index }));
 const marginsOf = (image) => state.angles.map((a) => image.x * Math.cos(a) + image.y * Math.sin(a));
 const codeOf = (image) => marginsOf(image).map((m) => (m >= 0 ? "1" : "0")).join("");
@@ -35,22 +35,22 @@ function groupsOf(images) {
   return [...groups].sort(([a], [b]) => a.localeCompare(b)).map(([code, members]) => ({ code, members }));
 }
 
-function race(groups) {
-  const rows = groups.map((g) => ({ ...g, score: scoreOf(g.code), value: Math.log(scoreOf(g.code)) / g.members.length }));
+function race(groups, key = state.key, seed = state.seed) {
+  const rows = groups.map((g) => ({ ...g, score: scoreOf(g.code, key), value: Math.log(scoreOf(g.code, key)) / g.members.length }));
   const best = Math.max(...rows.map((r) => r.value));
   const tied = rows.filter((r) => r.value === best);
-  const winner = tied[Math.floor(uniform(state.seed, 0x54100 + state.prompt.id) * tied.length)];
-  const image = winner.members[Math.floor(uniform(state.seed, 0x7ae00 + state.prompt.id) * winner.members.length)];
+  const winner = tied[Math.floor(uniform(seed, 0x54100 + state.prompt.id) * tied.length)];
+  const image = winner.members[Math.floor(uniform(seed, 0x7ae00 + state.prompt.id) * winner.members.length)];
   return { rows, winner, image };
 }
 
-function detect(image) {
+function detect(image, key = state.key) {
   const code = codeOf(image);
   const codes = [code];
   marginsOf(image).forEach((m, i) => {
     if (Math.abs(m) < MARGIN) codes.push(code.slice(0, i) + (code[i] === "0" ? "1" : "0") + code.slice(i + 1));
   });
-  const score = Math.max(...codes.map(scoreOf));
+  const score = Math.max(...codes.map((c) => scoreOf(c, key)));
   // Without the watermark each region's score is uniform, so P(max of k scores > s) = 1 - s^k.
   // Threshold: a plain image passes with probability DETECT_P.
   const threshold = (1 - DETECT_P) ** (1 / codes.length);
@@ -275,17 +275,24 @@ const genViews = [
 // ---------- Detection ----------
 const det = makeStage($("det-stage"), 1);
 
-function checkedImage(images, chosen) {
-  if (state.check === "marked") return chosen.image;
-  return images[Math.floor(uniform(state.plainSeed, 0x3c1 + state.prompt.id) * images.length)];
+// A worked example: the first fixed key whose watermarked image clears the threshold.
+function detectionExample(groups) {
+  let fallback;
+  for (let i = 1; i <= 400; i += 1) {
+    const key = Math.imul(i, 0x9e3779b9) >>> 0;
+    const seed = Math.imul(i, 0x85ebca6b) >>> 0;
+    const image = race(groups, key, seed).image;
+    const result = detect(image, key);
+    fallback ??= { key, image, result };
+    if (result.score > result.threshold) return { key, image, result };
+  }
+  return fallback;
 }
 
 const detViews = [
-  function take(stage, { image }) {
+  function take(stage, { image, exampleKey }) {
     setTile(stage.tiles[0], { image, x: V.cx, y: V.cy, s: 250 });
-    stage.caption.textContent = state.check === "marked"
-      ? "The image returned in Generation."
-      : "An ordinary sample from the generator, never selected with the key.";
+    stage.caption.innerHTML = `An image returned by Generation with key <code>${hex(exampleKey)}</code>.`;
   },
   function locate(stage, { image, result }) {
     const colors = new Map(result.codes.map((c, i) => [c, i === 0 ? "#14161b" : "#9aa3b2"]));
@@ -309,8 +316,8 @@ const detViews = [
     const verdict = ov(stage, "ov-verdict", 220, 176);
     verdict.append(el("strong", "", detected ? "Watermark detected" : "No watermark detected"),
       el("span", "", `Score ${result.score.toFixed(2)} is ${detected ? "above" : "below"} the threshold.`));
-    stage.caption.textContent = `The threshold is set so only ${Math.round(DETECT_P * 100)}% of plain images pass it. ` +
-      "One image is weak evidence, so mistakes happen here; in practice, scores from a batch of images are combined.";
+    stage.caption.textContent = `The threshold lets ${Math.round(DETECT_P * 100)}% of plain images through, a loose demo setting. ` +
+      "With one image the evidence is weak, so in practice scores from a batch of images are combined.";
   },
 ];
 
@@ -324,8 +331,8 @@ function render() {
   const images = imagesOf();
   const groups = groupsOf(images);
   const chosen = race(groups);
-  const image = checkedImage(images, chosen);
-  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, image, result: detect(image) };
+  const example = detectionExample(groups);
+  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, image: example.image, result: example.result, exampleKey: example.key };
   document.querySelectorAll("[data-key-value]").forEach((n) => (n.textContent = `key ${hex(state.key)}`));
   for (const section of sections) {
     clear(section.stage);
@@ -377,21 +384,10 @@ document.querySelectorAll("[data-planes]").forEach((button) => button.addEventLi
   render();
 }));
 
-document.querySelectorAll("[data-check]").forEach((button) => button.addEventListener("click", () => {
-  state.check = button.dataset.check;
-  pressOnly("[data-check]", button);
-  render();
-}));
-
 document.querySelectorAll("[data-action]").forEach((button) => button.addEventListener("click", () => {
   const action = button.dataset.action;
   if (action === "planes") drawPlanes();
   if (action === "key") { state.key = rand32(); state.seed = rand32(); }
-  if (action === "plain") {
-    state.plainSeed = rand32();
-    state.check = "plain";
-    pressOnly("[data-check]", document.querySelector('[data-check="plain"]'));
-  }
   render();
 }));
 
