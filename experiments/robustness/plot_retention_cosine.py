@@ -3,14 +3,13 @@
 
 Each marker pairs, for one method and one of the 20 edits, the mean original-edited cosine
 similarity in our encoder's space with the paired detection retention; the Spearman rank
-correlation over the 20 edits is computed per method. Inputs are ``edit_results`` CSVs (see
-``render_robustness.py``): ours from ``summarize_robustness.py`` (``--results``; its ``cosine``
-column), the baselines' retention from ``experiments/baselines/robustness.py``
+correlation over the 20 edits is computed per method. Inputs are our ``per_edit.csv`` from
+``summarize_robustness.py`` (``--results``), the baselines' retention from ``experiments/baselines/robustness.py``
 (``--baseline-per-edit NAME=per_edit.csv``) with their cosines from ``edit_cosines.py``
 (``--cosines``).
 
     python experiments/robustness/plot_retention_cosine.py \
-        --results robustness/summary/edit_results.csv \
+        --results robustness/summary/per_edit.csv \
         --baseline-per-edit "Tree-Ring=analysis/tree_ring_robustness/per_edit.csv" \
         --cosines analysis/tree_ring_cosines.csv --output-dir figures
 
@@ -29,7 +28,9 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _robustness_lib import EDIT_IDS  # noqa: E402
 from detection_corpus import write_csv_rows  # noqa: E402
-from render_robustness import methods_in_order, read_baseline_per_edit, read_results  # noqa: E402
+from render_robustness import (  # noqa: E402
+    methods_in_order, ours_results_at_fpr, read_baseline_per_edit, read_ours_per_edit,
+)
 
 from watermark.config import load_detection_config  # noqa: E402
 
@@ -116,7 +117,8 @@ def plot(points: Dict[str, List[Dict[str, Any]]], rho: Dict[str, float], output:
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     cfg = load_detection_config()
-    parser.add_argument("--results", type=Path, nargs="+", required=True)
+    parser.add_argument("--results", type=Path, nargs="+", required=True,
+                        help="per_edit.csv from summarize_robustness.py")
     parser.add_argument("--baseline-per-edit", action="append", default=[], metavar="NAME=PER_EDIT_CSV")
     parser.add_argument("--cosines", type=Path, nargs="*", default=[])
     parser.add_argument("--fpr", type=float, default=max(cfg.fpr_targets))
@@ -124,7 +126,9 @@ def main() -> int:
     args = parser.parse_args()
     rows: List[Dict[str, Any]] = []
     for path in args.results:
-        rows.extend(read_results(path))
+        if path.name == "edit_results.csv":
+            path = path.with_name("per_edit.csv")
+        rows.extend(ours_results_at_fpr(read_ours_per_edit(path), cfg, args.fpr))
     for item in args.baseline_per_edit:
         name, _, path = item.partition("=")
         rows.extend(read_baseline_per_edit(name, Path(path), args.fpr))
