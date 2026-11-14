@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Robustness table, category figure, per-edit table and detector-ablation table.
 
-Inputs: ``summarize_robustness.py`` output (ours), the per-edit results of the native baselines
+Inputs: ``per_edit.csv`` from ``summarize_robustness.py`` (ours), the per-edit results of the native baselines
 (``--baseline-per-edit NAME=per_edit.csv``, written by ``experiments/baselines/robustness.py``) and
 the generative-edit summary (``--generative summary.csv``, written by
 ``experiments/generative_edits/summarize.py``; methods ``ours_nN_mM`` and the baseline ids). All
@@ -36,9 +36,10 @@ import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _robustness_lib import EDIT_GROUPS, EDIT_IDS  # noqa: E402
+from summarize_robustness import edit_results  # noqa: E402
 
 from watermark.attacks import EDITS  # noqa: E402
-from watermark.config import load_detection_config  # noqa: E402
+from watermark.config import DetectionConfig, load_detection_config  # noqa: E402
 
 GROUP_TITLES = {"appearance_compression": "Appearance and compression", "geometric": "Geometric transformations",
                 "generative": "Edits from an image-editing model"}
@@ -66,22 +67,31 @@ GENERATIVE_LABELS = {"attribute_edit": "Attribute change", "background_cleanup":
                      "cat_attack": "Cat insertion", "camera_viewpoint_change": "Camera-viewpoint change"}
 
 
-def read_results(path: Path) -> List[Dict[str, Any]]:
-    """Read an ``edit_results`` CSV; numeric fields become floats (``None`` when empty)."""
-    rows = []
-    with Path(path).open(newline="", encoding="utf-8") as handle:
-        for row in csv.DictReader(handle):
-            for field in ("edited_tpr", "edited_fpr", "retention", "unedited_tpr", "cosine"):
-                if field in row:
-                    row[field] = _number(row[field])
-            rows.append(row)
-    return rows
-
-
 def _number(value: Any) -> Optional[float]:
     """A float, or ``None`` when empty or NaN (retention is undefined when nothing was detected)."""
     number = float(value) if value not in ("", None) else float("nan")
     return None if number != number else number
+
+
+def read_ours_per_edit(path: Path) -> List[Dict[str, Any]]:
+    """Read the ordinary-edit summary with every detector and FPR target."""
+    with path.open(newline="", encoding="utf-8") as handle:
+        reader = csv.DictReader(handle)
+        if "fpr_target" not in (reader.fieldnames or []):
+            raise ValueError("%s must be the per_edit.csv from summarize_robustness.py" % path)
+        return [
+            {**row, "N": int(row["N"]), "M": int(row["M"]), "fpr_target": float(row["fpr_target"]),
+             "tpr": float(row["tpr"]), "fpr": float(row["fpr"]),
+             "retention": _number(row["retention"]), "cosine": _number(row["cosine"])}
+            for row in reader
+        ]
+
+
+def ours_results_at_fpr(per_edit: List[Dict[str, Any]], cfg: DetectionConfig, fpr: float) -> List[Dict[str, Any]]:
+    rows = edit_results(per_edit, cfg, fpr)
+    if not rows:
+        raise ValueError("our per-edit summary has no boundary-aware results at FPR target %g" % fpr)
+    return rows
 
 
 def read_baseline_per_edit(name: str, path: Path, fpr: float) -> List[Dict[str, Any]]:
@@ -295,14 +305,13 @@ def main() -> int:
     parser.add_argument("--fpr", type=float, default=max(cfg.fpr_targets))
     parser.add_argument("--output-dir", type=Path, required=True)
     args = parser.parse_args()
-    rows = read_results(args.summary_dir / "edit_results.csv")
+    per_edit = read_ours_per_edit(args.summary_dir / "per_edit.csv")
+    rows = ours_results_at_fpr(per_edit, cfg, args.fpr)
     for item in args.baseline_per_edit:
         name, _, path = item.partition("=")
         rows.extend(read_baseline_per_edit(name, Path(path), args.fpr))
     if args.generative is not None:
         rows.extend(read_generative_summary(args.generative, args.fpr))
-    with (args.summary_dir / "per_edit.csv").open(newline="", encoding="utf-8") as handle:
-        per_edit = list(csv.DictReader(handle))
     args.output_dir.mkdir(parents=True, exist_ok=True)
     (args.output_dir / "experiment3_categories.tex").write_text(categories_table(rows, args.fpr), encoding="utf-8")
     (args.output_dir / "robustness_per_edit.tex").write_text(per_edit_tables(rows, args.fpr), encoding="utf-8")

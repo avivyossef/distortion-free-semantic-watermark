@@ -62,7 +62,7 @@ python experiments/robustness/edit_cosines.py --method "Tree-Ring" \
     --original-images out/tree_ring_images.jsonl --edited-images out/tree_ring_edited_images.jsonl \
     --checkpoint checkpoints/checkpoint-step-00019840.pt --output analysis/tree_ring_cosines.csv
 python experiments/robustness/plot_retention_cosine.py \
-    --results robustness/summary/edit_results.csv \
+    --results robustness/summary/per_edit.csv \
     --baseline-per-edit "Tree-Ring=analysis/tree_ring_robustness/per_edit.csv" \
     --cosines analysis/tree_ring_cosines.csv --output-dir figures
 ```

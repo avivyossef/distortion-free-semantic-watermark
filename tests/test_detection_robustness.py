@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import csv
+import sys
 
 import numpy as np
 import pytest
@@ -250,11 +251,48 @@ def test_pair_cosines_average_per_edit_over_watermarked_images():
     assert out == [{"method": "A", "edit_id": "crop_50", "cosine": pytest.approx(0.5), "pair_count": 2}]
 
 
-def test_edit_results_csv_roundtrip(tmp_path):
-    rows = _results("Ours (N=8, M=4)", 0.5, 0.9)
-    path = tmp_path / "edit_results.csv"
-    corpus.write_csv_rows(path, rows)
-    loaded = render.read_results(path)
-    assert loaded[0]["retention"] is None and loaded[1]["retention"] == pytest.approx(0.9)
-    with path.open() as handle:
-        assert next(csv.reader(handle))[0] == "method"
+@pytest.fixture
+def summary_with_two_fprs(tmp_path):
+    cfg = helpers.small_config()
+    setting = cfg.settings[0]
+    rows = [
+        {"N": setting.n, "M": setting.m, "detector": detector, "fpr_target": fpr, "edit_id": edit,
+         "tpr": tpr, "fpr": fpr, "retention": retention, "cosine": cosine}
+        for fpr, tpr, retentions in ((0.05, 0.1, (0.3, 0.7)), (0.20, 0.9, (0.7, 0.3)))
+        for detector in ("boundary", "exact")
+        for edit, retention, cosine in (("identity", None, 1.0),
+                                        ("jpeg_q90", retentions[0], 0.99),
+                                        ("jpeg_q75", retentions[1], 0.90))
+    ]
+    corpus.write_csv_rows(tmp_path / "per_edit.csv", rows)
+    corpus.write_csv_rows(tmp_path / "edit_results.csv", summ.edit_results(rows, cfg, 0.20))
+    return tmp_path
+
+
+def test_render_robustness_uses_requested_fpr(summary_with_two_fprs, monkeypatch):
+    root = summary_with_two_fprs
+    output = root / "tables"
+    monkeypatch.setattr(sys, "argv", ["render_robustness", "--summary-dir", str(root),
+                                    "--fpr", "0.05", "--output-dir", str(output)])
+    assert render.main() == 0
+    table = (output / "experiment3_categories.tex").read_text()
+    assert r"5\%" in table
+    assert "10.0 & 50.0 & 5.0" in table
+
+
+@pytest.mark.parametrize("filename", ["per_edit.csv", "edit_results.csv"])
+def test_retention_plot_uses_requested_fpr(summary_with_two_fprs, monkeypatch, filename):
+    root = summary_with_two_fprs
+    output = root / "figures"
+    monkeypatch.setattr(sys, "argv", ["plot_retention_cosine", "--results", str(root / filename),
+                                    "--fpr", "0.05", "--output-dir", str(output)])
+    assert similarity.main() == 0
+    with (output / "retention_cosine_correlations.csv").open() as handle:
+        row = next(csv.DictReader(handle))
+    assert float(row["spearman_rho"]) == pytest.approx(-1.0)
+
+
+def test_ours_per_edit_rejects_missing_fpr(summary_with_two_fprs):
+    rows = render.read_ours_per_edit(summary_with_two_fprs / "per_edit.csv")
+    with pytest.raises(ValueError, match="no boundary-aware results at FPR target 0.01"):
+        render.ours_results_at_fpr(rows, helpers.small_config(), 0.01)
