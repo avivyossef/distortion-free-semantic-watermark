@@ -7,9 +7,10 @@
   <title>Distortion-Free Semantic Watermarks</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;650;700;750&family=Instrument+Serif&display=swap">
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;650;700;750;800&display=swap">
   <link rel="stylesheet" href="project.css">
   <noscript><style>.demo { display: none; }</style></noscript>
+  <script defer src="lab-prompts.js"></script>
   <script defer src="walkthrough.js"></script>
 </head>
 <body>
@@ -18,6 +19,8 @@
     <a class="wordmark" href="#main">SamplingWatermark</a>
     <nav aria-label="Page">
       <a href="#walkthrough">Method</a>
+      <a href="#detection">Detection</a>
+      <a href="#about">About</a>
       <a href="#results">Results</a>
       <a href="#citation">Citation</a>
     </nav>
@@ -28,93 +31,117 @@
         <h1 id="project-title">Distortion-Free Semantic Watermarks <span>for Black-Box Generative Models</span></h1>
         <p class="authors">Aviv Yossef · Or Patashnik · Or Zamir</p>
         <p class="affiliation">Tel Aviv University</p>
-        <p class="lead">Generate several images from one prompt. Use a secret key to choose which image to return. Later, use the same key to check an image for the watermark.</p>
         <div class="hero-links">
           <a class="link-button" href="https://github.com/avivyossef/distortion-free-semantic-watermark">View code</a>
           <span>Paper and encoder weights coming soon</span>
         </div>
       </div>
-
-      <section id="walkthrough" class="demo" aria-labelledby="walkthrough-title">
-        <div class="demo-top">
-          <h2 id="walkthrough-title">How it works</h2>
-          <button class="play" data-play type="button">Play</button>
-        </div>
-        <div class="steps" role="group" aria-label="Walkthrough steps">
-          <button data-step type="button" aria-controls="generate" aria-pressed="true">Generate</button>
-          <button data-step type="button" aria-controls="select" aria-pressed="false">Select</button>
-          <button data-step type="button" aria-controls="detect" aria-pressed="false">Detect</button>
-        </div>
-
-        <section class="step" id="generate" data-panel aria-labelledby="generate-title">
-          <h3 id="generate-title">One prompt, several candidates</h3>
-          <p>“A golden retriever playing in snow”</p>
-          <div class="step-visual">
-            <div class="candidate-grid" role="img" aria-label="Six different generated images of golden retrievers in snow.">
-              <span class="photo c1"></span><span class="photo c2"></span><span class="photo c3"></span>
-              <span class="photo c4"></span><span class="photo c5"></span><span class="photo c6"></span>
-            </div>
-          </div>
-        </section>
-
-        <section class="step" id="select" data-panel aria-labelledby="select-title" hidden>
-          <h3 id="select-title">Choose one image to return</h3>
-          <p>Group the images by code. The key and group sizes pick the winning group. Return a random image from that group.</p>
-          <div class="step-visual selection-view">
-            <div class="code-groups" aria-label="Candidates grouped by image code">
-              <div class="code-group"><code>00</code><span class="photo c1"></span><span class="photo c4"></span></div>
-              <div class="code-group"><code>01</code><span class="photo c2"></span></div>
-              <div class="code-group"><code>10</code><span class="photo c3"></span><span class="photo c5 chosen"></span><span class="photo c6"></span></div>
-            </div>
-            <figure class="output-photo">
-              <span class="photo c5 chosen" role="img" aria-label="The selected golden retriever image from code 10"></span>
-              <figcaption>Returned image</figcaption>
-            </figure>
-          </div>
-        </section>
-
-        <section class="step" id="detect" data-panel aria-labelledby="detect-title" hidden>
-          <h3 id="detect-title">Check the image for a watermark</h3>
-          <p>Score the cropped image with the same key. A score at or above the threshold signals a watermark.</p>
-          <div class="step-visual detection-view">
-            <figure class="output-photo">
-              <span class="photo c5 cropped chosen" role="img" aria-label="A cropped version of the selected golden retriever image"></span>
-              <figcaption>Cropped image</figcaption>
-            </figure>
-            <div class="image-decision">
-              <span class="score-label" id="image-score-label">Watermark score</span>
-              <span class="score-track" role="img" aria-labelledby="image-score-label" aria-describedby="image-score-result">
-                <span class="threshold"></span><span class="score-dot"></span>
-              </span>
-              <span class="threshold-label">Threshold</span>
-              <strong class="verdict" id="image-score-result"><span aria-hidden="true">✓</span> Watermark detected</strong>
-            </div>
-          </div>
-        </section>
-
-        <div class="demo-bottom">
-          <button data-previous type="button" disabled>Back</button>
-          <output data-status>Step 1 of 3 · Generate</output>
-          <button data-next type="button">Next</button>
-        </div>
-      </section>
-      <noscript>
-        <img src="assets/method.svg" alt="Generate candidates, select one image with a key, then compare the returned image’s score with the detection threshold." style="width: 100%; height: auto">
-      </noscript>
+      <div class="tldr">
+        <p class="tldr-label">TL;DR</p>
+        <p>A <strong>distortion-free, sampling-based watermarking method for generative models</strong> that requires only black-box access to any generator and any semantic encoder.</p>
+      </div>
     </section>
 
-    <section class="section results" id="results" aria-labelledby="results-title">
-      <div>
-        <h2 id="results-title">More images make detection easier</h2>
-        <p class="section-intro">On unedited Stable Diffusion 2.1 images, the detector caught 47.8% of watermarked single images and 99.4% of watermarked batches of five. Both rates are reported at a 5% false-positive target.</p>
+    <section id="walkthrough" class="demo" aria-label="Interactive watermark walkthrough">
+      <div class="toolbar" role="group" aria-label="Watermark settings">
+        <div class="model-input">
+          <label for="model">Model</label>
+          <select class="control" id="model">
+            <option value="sd21">Stable Diffusion 2.1</option>
+            <option value="sdxl">SDXL</option>
+            <option value="gpt">GPT Image</option>
+            <option value="flux">FLUX.2 Klein Base 4B</option>
+          </select>
+        </div>
+        <button class="prompt-button control" id="open-prompts" type="button" aria-haspopup="dialog">
+          <img id="prompt-preview" src="assets/lab/sd21-0-0.webp" alt="" width="40" height="40">
+          <span><small>Prompt</small><strong id="prompt-name">Two women walk outside, both holding up umbrellas</strong></span>
+          <span aria-hidden="true">⌄</span>
+        </button>
+
+        <div class="key-control">
+          <button class="control" id="draw-key" type="button">Draw secret key</button>
+          <code id="key-value" aria-live="polite"></code>
+        </div>
+        <div class="planes-control">
+          <label for="plane-count" class="visually-hidden">Number of hyperplanes</label>
+          <select id="plane-count" class="control">
+            <option value="2" selected>2</option>
+            <option value="3">3</option>
+            <option value="4">4</option>
+          </select>
+          <button class="control" id="draw-planes" type="button">Draw hyperplanes</button>
+          <span id="plane-preview" hidden></span>
+        </div>
       </div>
-      <figure class="detection-chart">
-        <figcaption>Watermarked batches detected at 5% false positives<br>32 candidates per output, 12-bit image codes</figcaption>
-        <div class="chart-row"><span>1 image</span><div class="chart-track" aria-hidden="true"><span style="--value: 47.8%"></span></div><strong>47.8%</strong></div>
-        <div class="chart-row"><span>5 images</span><div class="chart-track" aria-hidden="true"><span style="--value: 99.4%"></span></div><strong>99.4%</strong></div>
-        <div class="chart-row"><span>10 images</span><div class="chart-track" aria-hidden="true"><span style="--value: 99.9%"></span></div><strong>99.9%</strong></div>
-        <p class="result-note">In a separate GPT Image experiment, five-image batches reached 0.992 AUROC using API samples.</p>
+
+      <section class="canvas" id="watermarking" aria-labelledby="watermarking-title">
+        <div class="canvas-head">
+          <h2 id="watermarking-title">Select a watermarked image</h2>
+          <span id="step-count" aria-label="Walkthrough progress"></span>
+        </div>
+        <div class="pipeline" id="watermarking-pipeline">
+          <section class="station" data-station><h3></h3><div class="station-body"></div></section>
+          <section class="station" data-station><h3></h3><div class="station-body"></div></section>
+          <section class="station" data-station><h3></h3><div class="station-body"></div></section>
+        </div>
+        <div class="demo-bottom">
+          <button class="control" id="previous" type="button">Back</button>
+          <output id="step-status" aria-live="polite"></output>
+          <button class="primary control" id="next" type="button">Show hyperplanes</button>
+        </div>
+        <details id="calculation" hidden>
+          <summary>Show calculation</summary>
+          <p>For each occupied code <var>c</var>, calculate <code>log(F(c)) / n<sub>c</sub></code>, where <var>F(c)</var> is the keyed score and <var>n<sub>c</sub></var> is the group size. Pick the group with the highest result, then draw one of its images uniformly.</p>
+          <p id="race-values"></p>
+          <p>This walkthrough hashes the displayed 2D points. The paper hashes full encoder embeddings in one shared space and uses a separate clean calibration set.</p>
+        </details>
+      </section>
+
+      <section class="canvas" id="detection" aria-labelledby="detection-title">
+        <div class="canvas-head">
+          <h2 id="detection-title">Check a batch for the watermark</h2>
+          <span id="detection-count"></span>
+        </div>
+        <div class="pipeline">
+          <section class="station" data-station><h3></h3><div class="station-body"></div></section>
+          <section class="station" data-station><h3></h3><div class="station-body"></div></section>
+          <section class="station" data-station><h3></h3><div class="station-body"></div></section>
+        </div>
+        <div class="demo-bottom">
+          <button class="control" id="detection-previous" type="button">Back</button>
+          <output id="detection-status" aria-live="polite"></output>
+          <button class="primary control" id="detection-next" type="button">Start detection</button>
+        </div>
+      </section>
+      <p class="lab-note">Pre-generated candidates. The walkthrough uses a simplified 2D plot centered on each prompt.</p>
+
+      <dialog id="prompt-dialog" aria-labelledby="prompt-dialog-title">
+        <div class="dialog-head">
+          <h3 id="prompt-dialog-title">Choose a prompt</h3>
+          <form method="dialog"><button class="control" type="submit">Close</button></form>
+        </div>
+        <div class="prompt-grid" id="prompt-grid"></div>
+      </dialog>
+    </section>
+    <noscript>
+      <figure class="fallback">
+        <img src="assets/method.svg" alt="The generator returns candidates, an encoder groups them by code, and a secret key guides selection. Detection averages scores from a batch." width="1000" height="660">
       </figure>
+    </noscript>
+
+    <section class="section about" id="about" aria-labelledby="about-title">
+      <h2 id="about-title">About</h2>
+      <div class="about-copy">
+        <p>We introduce a <strong>sampling-based, distortion-free watermark for generative models</strong> and evaluate it on image generation. To our knowledge, it is the first distortion-free semantic watermark that treats both the generator and the semantic encoder as black boxes. The method only needs to request samples and encode them, so it can work with a closed generation API. The choice of encoder determines which changes to an image the watermark can tolerate.</p>
+        <p><strong>How it works.</strong> We ask the generator for several images of the same prompt. An image encoder describes each candidate, and random hyperplanes turn that description into a short code. A secret key gives each code a score. Our selection rule uses those scores and accounts for how many candidates share each code, then returns one of the original images with its pixels untouched.</p>
+        <p><strong>Why it’s distortion-free.</strong> For any given prompt, averaging over randomly drawn secret keys gives exactly the same distribution of images as sampling directly from the generator.</p>
+        <p><strong>Why it can survive edits.</strong> Cropping, resizing, and compression can change many pixels while preserving what an image depicts. When an edit leaves the encoder’s description nearly the same, the detector can check the image’s code and nearby codes for the watermark signal.</p>
+        <p><strong>How we detect it.</strong> We use the same key to score a batch of images from one source. The encoder is trained to give similar descriptions to an image and its edited versions while distinguishing different images from the same prompt. A single image can carry a weak signal, so we combine evidence across the batch.</p>
+      </div>
+    </section>
+
+    <section class="section results" id="results" aria-label="Results">
       <details>
         <summary>Detection and image-quality tables</summary>
         <div class="tables">
