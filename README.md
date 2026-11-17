@@ -5,7 +5,7 @@
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · Encoder weights (coming soon)
+Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
 
 <img src="docs/assets/method.svg" alt="Select one image, then compare its watermark score with the detection threshold" width="100%">
 
