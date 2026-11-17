@@ -41,6 +41,9 @@ h1 { font-size: clamp(2rem, 4.2vw, 3.6rem); text-wrap: balance; }
 .hero-links { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
 .tldr { max-width: 62ch; margin: 28px auto 0; font-size: clamp(1.05rem, 1.5vw, 1.2rem); line-height: 1.5; text-wrap: pretty; }
 .tldr strong { margin-right: 6px; }
+.teaser { max-width: 960px; margin: 40px auto 0; container-type: inline-size; }
+/* the teaser scales a 16:9 stage and keeps a fixed 52px control bar below it */
+.teaser iframe { display: block; width: 100%; height: calc(100cqw * 9 / 16 + 52px); border: 0; border-radius: 16px; overflow: hidden; background: #e9ebf0; }
 .link-button, .button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 40px; padding: 8px 16px; border-radius: 999px;
