@@ -17,9 +17,6 @@ Tel Aviv University
 
 ## How it works
 
-The animation shows both halves: making a watermarked image (top) and checking
-images for the watermark (bottom).
-
 <img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
 
 <table>
