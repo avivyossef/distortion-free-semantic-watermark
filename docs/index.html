@@ -73,7 +73,8 @@
           </article>
           <article class="step" data-step="4">
             <p class="step-num">5</p>
-            <h3>Return one image, according to the score and the number of candidates in the same semantic region</h3>
+            <h3>Return one image from an appropriate distribution</h3>
+            <p class="hint">Sample a region depending on the group sizes and the secret key, to preserve the original output distribution, then release one of its images unchanged.</p>
             <div class="step-controls">
               <button class="button" type="button" data-action="key">Redraw key</button>
             </div>
@@ -132,6 +133,7 @@
           <article class="step" data-step="2">
             <p class="step-num">3</p>
             <h3>Score its region with the same secret key and compare it to a threshold</h3>
+            <p class="hint">Watermarked images were chosen for their region's key score, so they are much more likely to score high. A non-watermarked image's score is uniform between 0 and 1, so it rarely clears the threshold.</p>
           </article>
         </div>
 
@@ -153,7 +155,7 @@
 
     <noscript>
       <figure class="fallback wrap">
-        <img src="assets/method.svg" alt="The generator returns candidates, an encoder groups them by code, and a secret key guides selection." width="1000" height="660">
+        <img src="assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold." width="1000" height="700">
       </figure>
     </noscript>
 

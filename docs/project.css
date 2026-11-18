@@ -130,6 +130,12 @@ h1 { font-size: clamp(2rem, 4.2vw, 3.6rem); text-wrap: balance; }
 .ov-verdict { display: grid; gap: 4px; max-width: 46%; }
 .ov-verdict strong { font-size: clamp(1.1rem, 2vw, 1.5rem); font-weight: 700; line-height: 1.15; }
 .ov-verdict span { color: var(--muted); font-size: .85rem; }
+.ov-row-name { white-space: nowrap; font-size: .9rem; }
+.ov-row-name strong { font-weight: 700; }
+.ov-row-name span { color: var(--muted); font-family: var(--mono); font-size: .8rem; }
+.ov-row-verdict { white-space: nowrap; font-weight: 600; font-size: .95rem; }
+.ov-row-verdict.is-hit { color: #1f7a3d; }
+.ov-row-verdict.is-miss { color: var(--muted); }
 
 .demo-note { padding-block: 8px 24px; font-size: .85rem; color: var(--muted); max-width: 1240px; }
 
@@ -172,4 +178,7 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
   .prompt-text span { font-size: .85rem; }
   .prompt-button img { width: 30px; height: 30px; }
   .tile figcaption { font-size: .6rem; padding: 2px 3px; }
+  .ov-row-name, .ov-row-verdict { font-size: .72rem; }
+  .ov-row-verdict { transform: translateY(10px); }
+  .ov-thresh span { top: 24px; font-size: .62rem; }
 }

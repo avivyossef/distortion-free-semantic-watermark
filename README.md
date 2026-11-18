@@ -7,9 +7,9 @@ Tel Aviv University
 
 Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
 
-<img src="docs/assets/teaser.gif" alt="Sample several images for one prompt, map them to semantic regions, sample a region with the secret key, and release one image unchanged" width="100%">
+<img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
 
-*The watermark is in the choice, not in the pixels.* To detect it, we embed a suspect image, find its region, and compare that region's keyed score with a threshold; the [project page](https://avivyossef.github.io/distortion-free-semantic-watermark/#detection) walks through both steps.
+*The watermark is in the choice, not in the pixels.* The [project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) walks through both steps interactively.
 
 </div>
 
