@@ -2,7 +2,7 @@
 
 # Distortion-Free Semantic Watermarks<br>for Black-Box Generative Models
 
-**[Aviv Yossef](https://github.com/avivyossef) · [Or Patashnik](https://orpatashnik.github.io/index.html) · [Or Zamir](https://zamir.prof/)**<br>
+**[Aviv Yossef](https://www.linkedin.com/in/aviv-yossef/) · [Or Patashnik](https://orpatashnik.github.io/index.html) · [Or Zamir](https://zamir.prof/)**<br>
 Tel Aviv University
 
 **[Paper (arXiv)](https://arxiv.org/abs/2611.23208)** &nbsp;·&nbsp; **[Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/)** &nbsp;·&nbsp; **[Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)** &nbsp;·&nbsp; **[BibTeX](#citation)**
