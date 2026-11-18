@@ -1,60 +1,89 @@
 <div align="center">
 
-# Distortion-Free Semantic Watermarks for Black-Box Generative Models
+# Distortion-Free Semantic Watermarks<br>for Black-Box Generative Models
 
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-[Paper (arXiv)](https://arxiv.org/abs/2611.23208) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
+[![arXiv](https://img.shields.io/badge/arXiv-2611.23208-b31b1b.svg?style=flat-square)](https://arxiv.org/abs/2611.23208)
+[![Project page](https://img.shields.io/badge/Project-page-3b6fd8.svg?style=flat-square)](https://avivyossef.github.io/distortion-free-semantic-watermark/)
+[![Encoder weights](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-encoder-ffcc4d.svg?style=flat-square)](https://huggingface.co/avivyossef/semantic-entropy-encoder)
+[![License](https://img.shields.io/badge/license-Apache--2.0-8a94a3.svg?style=flat-square)](LICENSE)
 
 <img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
 
-*The watermark is in the choice, not in the pixels.* The [project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) walks through both steps interactively.
+***The watermark is in the choice, not in the pixels.***
 
 </div>
 
-This repository implements semantic watermarking by selecting among outputs
-from a black-box generator. The method needs only independent samples from
-the generator and queries to a semantic encoder, making it applicable to
-closed image-generation APIs.
+> **TL;DR** A distortion-free, sampling-based watermark for generative models. It needs only black-box access to the generator and to a semantic encoder, so it works with closed image-generation APIs.
 
-The watermark is *distortion-free*: averaged over the secret detection key
-and sampler randomness, a single output has the generator's original
-distribution. The guarantee is over keys; the paper measures the quality and
-diversity of a single fixed key empirically.
-Semantic detection is designed to tolerate content-preserving edits such as
-compression, cropping, and resizing.
+<table>
+  <tr>
+    <td align="center" width="33%"><img src="docs/assets/icon-robustness.svg" width="220" alt=""><br><b>Semantic robustness</b></td>
+    <td align="center" width="33%"><img src="docs/assets/icon-distortion-free.svg" width="220" alt=""><br><b>Distortion-free</b></td>
+    <td align="center" width="33%"><img src="docs/assets/icon-black-box.svg" width="220" alt=""><br><b>Black-box</b></td>
+  </tr>
+  <tr>
+    <td valign="top">Cropping, resizing and compression change pixels, not what an image depicts, so an edited image stays in its semantic region and keeps the watermark.</td>
+    <td valign="top">Averaged over secret keys, a watermarked output has exactly the generator's own distribution. The guarantee is over keys; the paper measures a single fixed key empirically.</td>
+    <td valign="top">The method only requests samples and embeds them, so it never needs the weights or internals of the generator or the encoder.</td>
+  </tr>
+</table>
 
-## Method
+## How it works
 
-For each request, we draw *N* independent candidate images, embed them, and
-map their embeddings to *M*-bit codes using fixed random hyperplanes.
-A secret key assigns each code a pseudorandom score *F*(*c*).
-**Gumbel selection** chooses the code maximizing
-log *F*(*c*) / *n*<sub>*c*</sub>, where *n*<sub>*c*</sub> is its number of
-candidates, then returns a uniformly random candidate from that group.
-Averaged over keys and sampler randomness, each candidate is returned with
-probability 1/*N*.
+<table>
+  <tr>
+    <th width="50%">Generation</th>
+    <th width="50%">Detection</th>
+  </tr>
+  <tr>
+    <td valign="top">
 
-To detect the watermark, we turn the image into a code using the same encoder
-and hyperplanes as during selection. We then compute the code's score *F*(*c*)
-with the same secret key. If the image embedding is close to a hyperplane,
-the **boundary-aware detector** also checks nearby codes and uses the highest
-score it finds.
+1. **Sample** *N* images for the prompt.
+2. **Map** each image to a semantic region: *M* random hyperplanes over the encoder's embedding give it an *M*-bit code.
+3. **Sample a region** from an appropriate distribution, which depends on the secret key and the group sizes to preserve the original output distribution.
+4. **Release** one image from that region, unchanged.
 
-For one image, we compare its score with a threshold calibrated on
-unwatermarked images. With a batch of *B* images from one source, we average
-their scores before comparing with a threshold calibrated for that batch size.
-The experiments use this detector on both unedited and edited images.
+</td>
+    <td valign="top">
 
-The encoder must distinguish independent generations from the same prompt
-while keeping each image close to its edited versions. Standard semantic
-encoders may map those independent generations close together. We train a
-DINOv2 encoder with LoRA to balance separation and stability. The variation
-among generations that remains distinguishable after editing is the
-*semantic entropy* needed for selection to introduce a detectable signal.
+1. **Embed** the suspect image and find its region. Near a hyperplane, the neighbouring region is checked too.
+2. **Score** the region with the same secret key.
+3. **Compare** with a threshold calibrated on unwatermarked images. Watermarked images are much more likely to score high.
 
-## Installation
+</td>
+  </tr>
+</table>
+
+<details>
+<summary><b>The details</b></summary>
+
+<br>
+
+**Selection.** The secret key gives each code a pseudorandom score *F*(*c*).
+**Gumbel selection** picks the code maximizing log *F*(*c*) / *n*<sub>*c*</sub>,
+where *n*<sub>*c*</sub> is its number of candidates, then returns a uniformly random
+candidate from that region. Averaged over keys and sampler randomness, each
+candidate is returned with probability 1/*N*.
+
+**Detection.** The image is turned into a code with the same encoder and
+hyperplanes, and the code is scored with the same key. If the embedding is close
+to a hyperplane, the **boundary-aware detector** also checks nearby codes and uses
+the highest score. For a batch of *B* images from one source, the scores are
+averaged before comparing with a threshold calibrated for that batch size.
+
+**The encoder.** It must distinguish independent generations from the same
+prompt while keeping each image close to its edited versions; standard semantic
+encoders may map those generations close together. We train a DINOv2 encoder
+with LoRA to balance separation and stability. The variation among generations
+that remains distinguishable after editing is the *semantic entropy* that
+selection needs to leave a detectable signal.
+
+</details>
+
+## Quick start
 
 ```bash
 git clone https://github.com/avivyossef/distortion-free-semantic-watermark.git
@@ -67,7 +96,10 @@ python scripts/download_checkpoint.py --output-dir checkpoints   # trained encod
 Generating and embedding images needs a CUDA GPU. Tree-Ring, Gaussian Shading
 and SEAL run in their own environments (`experiments/baselines`).
 
-## Usage
+<details>
+<summary><b>Generate, embed and detect on Stable Diffusion 2.1</b></summary>
+
+<br>
 
 Keep keys private (`keys/` is git-ignored). Create a generation-seed key and
 a detector key:
@@ -99,6 +131,8 @@ The paper's 1,000 COCO prompts are a release asset:
 `watermark/` contains keyed scores, hyperplane codes, sampling rules,
 boundary-aware detection, and calibration. `encoder/` contains the semantic
 encoder. The paper's detector settings are in `configs/detection.yaml`.
+
+</details>
 
 ## Reproducing the paper
 
