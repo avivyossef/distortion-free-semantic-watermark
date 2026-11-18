@@ -119,12 +119,7 @@
           <article class="step" data-step="0">
             <p class="step-num">1</p>
             <h3>Take an image</h3>
-            <div class="step-controls">
-              <div class="segmented" role="group" aria-label="Image to check">
-                <button type="button" data-check="marked" aria-pressed="true">Watermarked</button>
-                <button type="button" data-check="plain" aria-pressed="false">Not watermarked</button>
-              </div>
-            </div>
+            <p class="hint">Here, a watermarked image and one that is not, side by side.</p>
           </article>
           <article class="step" data-step="1">
             <p class="step-num">2</p>
@@ -133,7 +128,7 @@
           <article class="step" data-step="2">
             <p class="step-num">3</p>
             <h3>Score its region with the same secret key and compare it to a threshold</h3>
-            <p class="hint">Watermarked images were chosen for their region's key score, so they are much more likely to score high. A non-watermarked image's score is uniform between 0 and 1, so it rarely clears the threshold.</p>
+            <p class="hint">Watermarked images are much more likely to score high. A non-watermarked image's score is uniform between 0 and 1.</p>
           </article>
         </div>
 

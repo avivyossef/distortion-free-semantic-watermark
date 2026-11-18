@@ -164,10 +164,13 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
   .story { grid-template-columns: minmax(0, 1fr); gap: 0; }
   .stage-wrap { grid-row: 1; position: sticky; top: 0; z-index: 3; background: var(--paper); }
   .stage { position: static; padding-block: 10px 4px; }
+  .board { width: min(100%, 42svh * 5 / 4); margin-inline: auto; }
+  #det-stage .stage-note { display: none; }
   .stage-caption { min-height: 2.6em; font-size: .85rem; margin-top: 6px; }
-  .steps { padding-block: 4vh 20vh; }
+  .steps { padding-block: 4vh 6vh; }
+  .step:last-child { min-height: 0; }
   .ov { font-size: .7rem; }
-  .step { min-height: 62vh; justify-content: flex-start; padding-top: 6vh; }
+  .step { min-height: 34svh; justify-content: flex-start; padding-top: 3vh; }
   .ov-code { font-size: .72rem; }
 }
 @media (max-width: 560px) {
