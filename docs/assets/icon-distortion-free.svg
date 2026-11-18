@@ -1,0 +1,8 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 240 132" width="240" height="132" role="img" aria-label="The output distribution with and without the watermark is the same">
+  <style>text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px; fill: #6b7787; }</style>
+  <g transform="translate(6 4) scale(0.78)"><path d="M8 86 H120" stroke="#8093ad" stroke-width="2"/><path d="M13 85 C30 85 37 73 47 54 C57 31 62 25 69 25 C83 25 84 51 94 66 C102 79 111 85 117 85 Z" fill="#d7e5fb" stroke="#3b6fd8" stroke-width="3"/></g>
+  <text x="120" y="66" text-anchor="middle" style="font-size:30px;font-weight:700;fill:#3a4358">=</text>
+  <g transform="translate(134 4) scale(0.78)"><path d="M8 86 H120" stroke="#8093ad" stroke-width="2"/><path d="M13 85 C30 85 37 73 47 54 C57 31 62 25 69 25 C83 25 84 51 94 66 C102 79 111 85 117 85 Z" fill="#d7e5fb" stroke="#3b6fd8" stroke-width="3"/></g>
+  <text x="56" y="112" text-anchor="middle">generator</text>
+  <text x="184" y="112" text-anchor="middle">with watermark</text>
+</svg>

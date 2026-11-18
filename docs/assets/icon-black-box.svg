@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" viewBox="0 0 240 132" width="240" height="132" role="img" aria-label="The generator and the encoder are only queried">
+  <style>text { font-family: system-ui, -apple-system, "Segoe UI", sans-serif; font-size: 12px; fill: #6b7787; }</style>
+  <defs>
+    <linearGradient id="g1" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#5b7cfa"/><stop offset=".55" stop-color="#8b4fd6"/><stop offset="1" stop-color="#d65aa8"/></linearGradient>
+    <linearGradient id="g2" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#19b3a6"/><stop offset="1" stop-color="#1f8fd1"/></linearGradient>
+  </defs>
+  <rect x="26" y="14" width="86" height="86" rx="22" fill="url(#g1)"/>
+  <g transform="translate(46 34) scale(1.9)"><path d="M12 2l2.2 6.3L20.5 10.5l-6.3 2.2L12 19l-2.2-6.3L3.5 10.5l6.3-2.2z" fill="#fff"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" fill="#fff" opacity=".85"/></g>
+  <rect x="128" y="14" width="86" height="86" rx="22" fill="url(#g2)"/>
+  <g transform="translate(148 34) scale(0.95)"><g stroke="rgba(255,255,255,.55)" stroke-width="1.6"><path d="M8 12L24 8M8 12L24 20M8 12L24 32M8 24L24 8M8 24L24 20M8 24L24 32M8 36L24 20M8 36L24 32M8 36L24 40M8 24L24 40"/><path d="M24 8L40 18M24 20L40 18M24 32L40 18M24 20L40 30M24 32L40 30M24 40L40 30"/></g><g fill="#fff"><circle cx="8" cy="12" r="3.4"/><circle cx="8" cy="24" r="3.4"/><circle cx="8" cy="36" r="3.4"/><circle cx="24" cy="8" r="3.4"/><circle cx="24" cy="20" r="3.4"/><circle cx="24" cy="32" r="3.4"/><circle cx="24" cy="40" r="3.4"/><circle cx="40" cy="18" r="4"/><circle cx="40" cy="30" r="4"/></g></g>
+  <text x="69" y="120" text-anchor="middle">generator</text>
+  <text x="171" y="120" text-anchor="middle">encoder</text>
+</svg>
