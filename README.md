@@ -5,35 +5,21 @@
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-<table>
-  <tr>
-    <td align="center">
-      <b>TL;DR</b><br><br>
-      A distortion-free, sampling-based watermark for generative models.<br>
-      It needs only black-box access to the generator and to a semantic encoder,<br>
-      so it works with closed image-generation APIs.
-    </td>
-  </tr>
-</table>
+<table><tr><td>
+<b>TL;DR</b> — A distortion-free, sampling-based watermark for generative models. It needs only black-box access to the generator and to a semantic encoder, so it works with closed image-generation APIs. <i>The watermark is in the choice, not in the pixels.</i>
+</td></tr></table>
 
-[Paper (arXiv)](https://arxiv.org/abs/2611.23208) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
+**[Paper (arXiv)](https://arxiv.org/abs/2611.23208)** &nbsp;·&nbsp; **[Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/)** &nbsp;·&nbsp; **[Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)** &nbsp;·&nbsp; **[BibTeX](#citation)**
 
 <img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
-
-***The watermark is in the choice, not in the pixels.***
 
 </div>
 
 <table>
   <tr>
-    <td align="center" width="33%"><img src="docs/assets/icon-robustness.svg" width="220" alt=""><br><b>Semantic robustness</b></td>
-    <td align="center" width="33%"><img src="docs/assets/icon-distortion-free.svg" width="220" alt=""><br><b>Distortion-free</b></td>
-    <td align="center" width="33%"><img src="docs/assets/icon-black-box.svg" width="220" alt=""><br><b>Black-box</b></td>
-  </tr>
-  <tr>
-    <td valign="top">Cropping, resizing and compression change pixels, not what an image depicts, so an edited image stays in its semantic region and keeps the watermark.</td>
-    <td valign="top">Averaged over secret keys, a watermarked output has exactly the generator's own distribution. The guarantee is over keys; the paper measures a single fixed key empirically.</td>
-    <td valign="top">The method only requests samples and embeds them, so it never needs the weights or internals of the generator or the encoder.</td>
+    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-robustness.svg" width="220" alt=""><br><b>Semantic robustness</b><br><sub>Cropping, resizing and compression change pixels, not what an image depicts, so an edited image keeps the watermark.</sub></td>
+    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-distortion-free.svg" width="220" alt=""><br><b>Distortion-free</b><br><sub>Averaged over secret keys, a watermarked output has exactly the generator's own distribution.</sub></td>
+    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-black-box.svg" width="220" alt=""><br><b>Black-box</b><br><sub>It only requests samples and embeds them, never the weights or internals of the generator or the encoder.</sub></td>
   </tr>
 </table>
 
@@ -64,7 +50,7 @@ Tel Aviv University
 </table>
 
 <details>
-<summary><b>The details</b></summary>
+<summary><b>Details: key-dependent selection, boundary-aware detection, the encoder</b></summary>
 
 <br>
 
@@ -72,7 +58,8 @@ Tel Aviv University
 **Gumbel selection** picks the code maximizing log *F*(*c*) / *n*<sub>*c*</sub>,
 where *n*<sub>*c*</sub> is its number of candidates, then returns a uniformly random
 candidate from that region. Averaged over keys and sampler randomness, each
-candidate is returned with probability 1/*N*.
+candidate is returned with probability 1/*N*. The guarantee is over keys; the paper
+measures a single fixed key empirically.
 
 **Detection.** The image is turned into a code with the same encoder and
 hyperplanes, and the code is scored with the same key. If the embedding is close
@@ -96,10 +83,10 @@ git clone https://github.com/avivyossef/distortion-free-semantic-watermark.git
 cd distortion-free-semantic-watermark
 conda env create -f environment.yml
 conda activate semantic-watermark
-# download the trained encoder and check its SHA-256
 python scripts/download_checkpoint.py --output-dir checkpoints
 ```
 
+The last command downloads the trained encoder and checks its SHA-256.
 Generating and embedding images needs a CUDA GPU. Tree-Ring, Gaussian Shading
 and SEAL run in their own environments (`experiments/baselines`).
 
