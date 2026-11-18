@@ -7,21 +7,13 @@ Tel Aviv University
 
 **[Paper (arXiv)](https://arxiv.org/abs/2611.23208)** &nbsp;·&nbsp; **[Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/)** &nbsp;·&nbsp; **[Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)** &nbsp;·&nbsp; **[BibTeX](#citation)**
 
-</div>
+<br>
 
-> **TL;DR** — A distortion-free, sampling-based watermark for generative models.
-> It needs only black-box access to the generator and to a semantic encoder,
+> **TL;DR** — A distortion-free, sampling-based watermark for generative models.<br>
+> It needs only black-box access to the generator and to a semantic encoder,<br>
 > so it works with closed image-generation APIs.
 
-## The idea
-
-A generator gives many different images for the same prompt. Instead of hiding
-a signal in the pixels, we hide it in **which** of these images is released:
-we sample several candidates, and a secret key decides which one to return.
-Whoever holds the key can later check whether an image's content matches the
-key's preference.
-
-<p align="center"><b><i>The watermark is in the choice, not in the pixels.</i></b></p>
+</div>
 
 ## How it works
 
@@ -54,10 +46,10 @@ images for the watermark (bottom).
   </tr>
 </table>
 
-## Why it works
+## What you get
 
-Because the watermark lives in the choice among the model's own outputs, the
-method gets three properties at once:
+The watermark lives in which of the model's own outputs is released, not in
+its pixels, so you get three properties at once:
 
 <table>
   <tr>
