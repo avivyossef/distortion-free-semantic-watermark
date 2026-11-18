@@ -90,7 +90,8 @@ git clone https://github.com/avivyossef/distortion-free-semantic-watermark.git
 cd distortion-free-semantic-watermark
 conda env create -f environment.yml
 conda activate semantic-watermark
-python scripts/download_checkpoint.py --output-dir checkpoints   # trained encoder, SHA-256 checked
+# download the trained encoder and check its SHA-256
+python scripts/download_checkpoint.py --output-dir checkpoints
 ```
 
 Generating and embedding images needs a CUDA GPU. Tree-Ring, Gaussian Shading
