@@ -41,6 +41,9 @@ h1 { font-size: clamp(2rem, 4.2vw, 3.6rem); text-wrap: balance; }
 .hero-links { display: flex; align-items: center; justify-content: center; gap: 12px; flex-wrap: wrap; margin-top: 26px; }
 .tldr { max-width: 62ch; margin: 28px auto 0; font-size: clamp(1.05rem, 1.5vw, 1.2rem); line-height: 1.5; text-wrap: pretty; }
 .tldr strong { margin-right: 6px; }
+.teaser { max-width: 960px; margin: 40px auto 0; container-type: inline-size; }
+/* the teaser scales a 16:9 stage and keeps a fixed 52px control bar below it */
+.teaser iframe { display: block; width: 100%; height: calc(100cqw * 9 / 16 + 52px); border: 0; border-radius: 16px; overflow: hidden; background: #e9ebf0; }
 .link-button, .button {
   display: inline-flex; align-items: center; justify-content: center; gap: 8px;
   min-height: 40px; padding: 8px 16px; border-radius: 999px;
@@ -56,6 +59,9 @@ h1 { font-size: clamp(2rem, 4.2vw, 3.6rem); text-wrap: balance; }
 /* Story: steps scroll on the left, the stage stays put on the right. */
 .part { border-top: 1px solid var(--line); padding-top: clamp(40px, 6vw, 72px); }
 .part h2 { text-align: center; }
+/* Each section title stays at the top while its walkthrough scrolls; the stage pins below it. */
+.part { --head: 64px; }
+.part > h2 { position: sticky; top: 0; z-index: 5; height: var(--head); display: flex; align-items: center; justify-content: center; background: color-mix(in srgb, var(--paper) 92%, transparent); backdrop-filter: blur(6px); font-size: clamp(1.4rem, 2.2vw, 1.9rem); }
 .story { display: grid; grid-template-columns: minmax(0, 5fr) minmax(0, 7fr); gap: clamp(32px, 5vw, 80px); }
 .steps { padding-block: 8vh 28vh; }
 .step { min-height: 64vh; display: flex; flex-direction: column; justify-content: center; gap: 14px; max-width: 46ch; opacity: .32; transition: opacity .35s ease; }
@@ -75,7 +81,7 @@ h1 { font-size: clamp(2rem, 4.2vw, 3.6rem); text-wrap: balance; }
 .race p { margin-top: 6px; font-family: var(--mono); font-size: .82rem; color: var(--muted); }
 
 .stage-wrap { position: relative; }
-.stage { position: sticky; top: max(16px, calc(50vh - 340px)); padding-block: 24px; }
+.stage { position: sticky; top: max(calc(var(--head) + 8px), calc(50vh - 340px)); padding-block: 24px; }
 .stage-bar { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 10px; margin-bottom: 12px; }
 .prompt-button, .model-pick {
   display: flex; align-items: center; gap: 10px; min-height: 52px; padding: 7px 12px;
@@ -127,13 +133,32 @@ h1 { font-size: clamp(2rem, 4.2vw, 3.6rem); text-wrap: balance; }
 .ov-verdict { display: grid; gap: 4px; max-width: 46%; }
 .ov-verdict strong { font-size: clamp(1.1rem, 2vw, 1.5rem); font-weight: 700; line-height: 1.15; }
 .ov-verdict span { color: var(--muted); font-size: .85rem; }
+.ov-row-name { white-space: nowrap; font-size: .9rem; }
+.ov-row-name strong { font-weight: 700; }
+.ov-row-name span { color: var(--muted); font-family: var(--mono); font-size: .8rem; }
+.ov-row-verdict { white-space: nowrap; font-weight: 600; font-size: .95rem; }
+.ov-row-verdict.is-hit { color: #1f7a3d; }
+.ov-row-verdict.is-miss { color: var(--muted); }
 
 .demo-note { padding-block: 8px 24px; font-size: .85rem; color: var(--muted); max-width: 1240px; }
 
 .section { border-top: 1px solid var(--line); padding-block: clamp(48px, 7vw, 96px); }
 
-.properties { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 40px; margin-top: 36px; }
+.properties { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 24px; margin-top: 36px; }
 .properties p { margin-top: 8px; color: #2c313b; font-size: .98rem; }
+.prop { background: var(--panel); border-radius: 20px; padding: 24px; text-align: center; }
+.prop h3 { font-size: 1.3rem; font-weight: 800; letter-spacing: -.01em; }
+.prop p { text-align: left; }
+.prop-ill { display: flex; align-items: center; justify-content: center; gap: 14px; height: 128px; margin: 16px 0 12px; }
+.prop-ill figure { display: grid; justify-items: center; gap: 6px; margin: 0; }
+.prop-ill figcaption { font-size: .78rem; color: var(--muted); }
+.prop-ill img, .prop-crop { display: block; width: 88px; height: 88px; border-radius: 12px; object-fit: cover; box-shadow: 0 4px 12px rgba(20, 30, 60, .16); }
+.prop-crop { overflow: hidden; }
+.prop-crop img { transform: scale(1.5) translate(6%, -5%); box-shadow: none; border-radius: 0; }
+.prop-ill svg { width: 96px; height: 75px; }
+.prop-op { font-size: 2rem; font-weight: 700; color: #3a4358; }
+.prop-box { display: grid; place-items: center; width: 88px; height: 88px; border-radius: 22px; }
+.prop-box svg { width: 46px; height: 46px; }
 
 .citation-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 20px; }
 pre { margin: 0; background: var(--panel); border-radius: 12px; padding: 20px; overflow-x: auto; font-size: .86rem; }
@@ -153,12 +178,17 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
 @media (max-width: 980px) {
   .wrap { width: calc(100% - 32px); }
   .story { grid-template-columns: minmax(0, 1fr); gap: 0; }
-  .stage-wrap { grid-row: 1; position: sticky; top: 0; z-index: 3; background: var(--paper); }
+  .part { --head: 48px; }
+  .properties { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .stage-wrap { grid-row: 1; position: sticky; top: var(--head); z-index: 3; background: var(--paper); }
   .stage { position: static; padding-block: 10px 4px; }
+  .board { width: min(100%, 42svh * 5 / 4); margin-inline: auto; }
+  #det-stage .stage-note { display: none; }
   .stage-caption { min-height: 2.6em; font-size: .85rem; margin-top: 6px; }
-  .steps { padding-block: 4vh 20vh; }
+  .steps { padding-block: 4vh 6vh; }
+  .step:last-child { min-height: 0; }
   .ov { font-size: .7rem; }
-  .step { min-height: 62vh; justify-content: flex-start; padding-top: 6vh; }
+  .step { min-height: 34svh; justify-content: flex-start; padding-top: 3vh; }
   .ov-code { font-size: .72rem; }
 }
 @media (max-width: 560px) {
@@ -169,4 +199,7 @@ footer { padding-block: 28px; border-top: 1px solid var(--line); color: var(--mu
   .prompt-text span { font-size: .85rem; }
   .prompt-button img { width: 30px; height: 30px; }
   .tile figcaption { font-size: .6rem; padding: 2px 3px; }
+  .ov-row-name, .ov-row-verdict { font-size: .72rem; }
+  .ov-row-verdict { transform: translateY(10px); }
+  .ov-thresh span { top: 24px; font-size: .62rem; }
 }

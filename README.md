@@ -5,9 +5,11 @@
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-Paper (coming soon) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
+[Paper (arXiv)](https://arxiv.org/abs/2611.23208) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
 
-<img src="docs/assets/method.svg" alt="Select one image, then compare its watermark score with the detection threshold" width="100%">
+<img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
+
+*The watermark is in the choice, not in the pixels.* The [project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) walks through both steps interactively.
 
 </div>
 
@@ -129,10 +131,13 @@ CPU tests on synthetic data: `python -m pytest -q tests`.
 
 ```bibtex
 @misc{yossef2026distortionfree,
-  title  = {Distortion-Free Semantic Watermarks for Black-Box Generative Models},
-  author = {Yossef, Aviv and Patashnik, Or and Zamir, Or},
-  year   = {2026},
-  note   = {Preprint}
+  title         = {Distortion-Free Semantic Watermarks for Black-Box Generative Models},
+  author        = {Yossef, Aviv and Patashnik, Or and Zamir, Or},
+  year          = {2026},
+  eprint        = {2611.23208},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2611.23208}
 }
 ```
 

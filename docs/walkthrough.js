@@ -10,7 +10,7 @@ const DETECT_P = 0.3;
 const rand32 = () => crypto.getRandomValues(new Uint32Array(1))[0];
 const state = {
   prompt: labPrompts[0], model: "sd21", planes: 2, angles: [],
-  key: rand32(), seed: rand32(), check: "marked",
+  key: rand32(), seed: rand32(),
 };
 
 // ---------- Method ----------
@@ -273,57 +273,72 @@ const genViews = [
 ];
 
 // ---------- Detection ----------
-const det = makeStage($("det-stage"), 1);
+const det = makeStage($("det-stage"), 2);
 
-// A worked example: the first fixed key whose watermarked image clears the threshold
-// while another candidate (a plain sample) stays below it.
+// A worked example: a fixed key under which the watermarked image clears the threshold while
+// another candidate of the same prompt stays below it. Images from other prompts are only a
+// last resort, so changing the prompt changes both examples.
 function detectionExample(images, groups) {
+  const below = (key) => (im) => { const r = detect(im, key); return r.score <= r.threshold; };
   let fallback;
   for (let i = 1; i <= 400; i += 1) {
     const key = Math.imul(i, 0x9e3779b9) >>> 0;
     const seed = Math.imul(i, 0x85ebca6b) >>> 0;
     const marked = race(groups, key, seed).image;
     const markedResult = detect(marked, key);
-    // Prefer another candidate of this prompt; otherwise any image generated for another prompt.
-    const others = labPrompts.filter((p) => p !== state.prompt).flatMap((p) => p.images[state.model].map((im, index) => ({ ...im, index })));
-    const plain = [...images.filter((im) => im !== marked), ...others].find((im) => {
-      const r = detect(im, key);
-      return r.score <= r.threshold;
-    });
-    fallback ??= { key, marked, plain: plain ?? images.find((im) => im !== marked) ?? marked };
-    if (markedResult.score > markedResult.threshold && plain) return { key, marked, plain };
+    if (markedResult.score <= markedResult.threshold) continue;
+    const plain = images.filter((im) => im !== marked).find(below(key));
+    if (plain) return { key, marked, plain };
+    if (!fallback) {
+      const others = labPrompts.filter((p) => p !== state.prompt).flatMap((p) => p.images[state.model].map((im, index) => ({ ...im, index })));
+      const other = others.find(below(key));
+      if (other) fallback = { key, marked, plain: other };
+    }
   }
-  return fallback;
+  return fallback ?? { key: 1, marked: images[0], plain: images[1] ?? images[0] };
 }
 
 const detViews = [
-  function take(stage, { image }) {
-    setTile(stage.tiles[0], { image, x: V.cx, y: V.cy, s: 250 });
-    stage.caption.textContent = "";
+  // Both examples throughout: the watermarked image on the left, the other on the right.
+  function take(stage, { example }) {
+    setTile(stage.tiles[0], { image: example.marked, x: V.cx - 112, y: V.cy - 10, s: 190, label: "Watermarked", color: "#14161b" });
+    setTile(stage.tiles[1], { image: example.plain, x: V.cx + 112, y: V.cy - 10, s: 190, label: "Not watermarked", color: "#7d8796" });
+    stage.caption.textContent = "One watermarked image and one that is not, checked the same way.";
   },
-  function locate(stage, { image, result }) {
-    const colors = new Map(result.codes.map((c, i) => [c, i === 0 ? "#14161b" : "#9aa3b2"]));
-    paintRegions(stage, colors);
+  function locate(stage, { example }) {
+    const marked = detect(example.marked, example.key);
+    const plain = detect(example.plain, example.key);
+    paintRegions(stage, new Map([[plain.code, "#9aa3b2"], [marked.code, "#14161b"]]));
     drawCircle(stage, true);
-    const [p] = placeOnPlot([image], 90);
-    leader(stage, p);
-    dot(stage, p.anchor, "#14161b");
-    setTile(stage.tiles[0], { image, x: p.x, y: p.y, s: 90, label: result.code, color: "#14161b" });
-    stage.caption.innerHTML = `The image lands in region <strong>${result.code}</strong>.` +
-      (result.codes.length > 1 ? ` It sits close to a hyperplane, so the neighbouring region ${result.codes.slice(1).join(", ")} is checked too, in case an edit moved it.` : "");
+    const [pm, pp] = placeOnPlot([example.marked, example.plain], 84);
+    leader(stage, pm);
+    leader(stage, pp);
+    dot(stage, pm.anchor, "#14161b");
+    dot(stage, pp.anchor, "#7d8796");
+    setTile(stage.tiles[0], { image: example.marked, x: pm.x, y: pm.y, s: 84, label: marked.code, color: "#14161b" });
+    setTile(stage.tiles[1], { image: example.plain, x: pp.x, y: pp.y, s: 84, label: plain.code, color: "#7d8796" });
+    const near = [marked, plain].some((r) => r.codes.length > 1);
+    stage.caption.innerHTML = `The watermarked image lands in region <strong>${marked.code}</strong>, the other one in region <strong>${plain.code}</strong>.` +
+      (near ? " An image close to a hyperplane also has its neighbouring region checked, in case an edit moved it." : "");
   },
-  function score(stage, { image, result }) {
-    setTile(stage.tiles[0], { image, x: 110, y: 150, s: 150 });
-    const detected = result.score > result.threshold;
-    ov(stage, "ov-muted", 220, 92).textContent = `Key score of region ${result.codes.join(" / ")}`;
-    scoreBar(stage, 220, 120, 210, result.score, "#14161b");
-    const tick = ov(stage, "ov-thresh", 220 + 210 * result.threshold, 120);
-    tick.append(el("span", "", `threshold ${result.threshold.toFixed(2)}`));
-    ov(stage, "ov-score", 440, 120).textContent = result.score.toFixed(2);
-    const verdict = ov(stage, "ov-verdict", 220, 176);
-    verdict.append(el("strong", "", detected ? "Watermark detected" : "No watermark detected"),
-      el("span", "", `Score ${result.score.toFixed(2)} is ${detected ? "above" : "below"} the threshold.`));
-    stage.caption.textContent = "";
+  function score(stage, { example }) {
+    const rows = [
+      { kind: "marked", name: "Watermarked", image: example.marked, result: detect(example.marked, example.key) },
+      { kind: "plain", name: "Not watermarked", image: example.plain, result: detect(example.plain, example.key) },
+    ];
+    rows.forEach((row, i) => {
+      const y = 110 + i * 180;
+      const detected = row.result.score > row.result.threshold;
+      setTile(stage.tiles[i], { image: row.image, x: 70, y, s: 110 });
+      ov(stage, "ov-row-name", 150, y - 44).append(el("strong", "", row.name), el("span", "", ` · region ${row.result.codes.join(" / ")}`));
+      scoreBar(stage, 150, y, 230, row.result.score, row.kind === "marked" ? "#14161b" : "#9aa3b2");
+      const tick = ov(stage, "ov-thresh", 150 + 230 * row.result.threshold, y);
+      tick.append(el("span", "", `threshold ${row.result.threshold.toFixed(2)}`));
+      ov(stage, "ov-score", 392, y).textContent = row.result.score.toFixed(2);
+      ov(stage, "ov-row-verdict " + (detected ? "is-hit" : "is-miss"), 150, y + 42).textContent =
+        detected ? "\u2713 Watermark detected" : "\u2717 No watermark detected";
+    });
+    stage.caption.textContent = "Same key, same threshold: the watermarked image's region scores high, the other one's does not.";
   },
 ];
 
@@ -338,8 +353,7 @@ function render() {
   const groups = groupsOf(images);
   const chosen = race(groups);
   const example = detectionExample(images, groups);
-  const image = state.check === "marked" ? example.marked : example.plain;
-  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, image, result: detect(image, example.key) };
+  const ctx = { images, groups, colors: colorMap(groups), pick: chosen, example };
   document.querySelectorAll("[data-key-value]").forEach((n) => (n.textContent = `key ${hex(state.key)}`));
   for (const section of sections) {
     clear(section.stage);
@@ -354,7 +368,16 @@ function syncSteps() {
   for (const section of sections) {
     let best = 0;
     let bestDistance = Infinity;
-    for (const s of section.root.querySelectorAll(".step")) {
+    const steps = [...section.root.querySelectorAll(".step")];
+    if (narrow.matches) {
+      // The stage is pinned above the steps: the active step is the first one whose
+      // title is still visible below it.
+      const below = section.root.querySelector(".stage-wrap").getBoundingClientRect().bottom;
+      const visible = steps.find((s) => s.querySelector("h3").getBoundingClientRect().top >= below - 4);
+      best = Number((visible ?? steps[steps.length - 1]).dataset.step);
+      bestDistance = 0;
+    }
+    for (const s of narrow.matches ? [] : steps) {
       const r = s.getBoundingClientRect();
       const distance = r.top > line ? r.top - line : r.bottom < line ? line - r.bottom : 0;
       if (distance < bestDistance) { bestDistance = distance; best = Number(s.dataset.step); }
@@ -388,12 +411,6 @@ document.querySelectorAll("[data-planes]").forEach((button) => button.addEventLi
   state.planes = Number(button.dataset.planes);
   pressOnly("[data-planes]", button);
   drawPlanes();
-  render();
-}));
-
-document.querySelectorAll("[data-check]").forEach((button) => button.addEventListener("click", () => {
-  state.check = button.dataset.check;
-  pressOnly("[data-check]", button);
   render();
 }));
 
