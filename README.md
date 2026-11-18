@@ -56,33 +56,6 @@ Tel Aviv University
   </tr>
 </table>
 
-<details>
-<summary><b>Details: key-dependent selection, boundary-aware detection, the encoder</b></summary>
-
-<br>
-
-**Selection.** The secret key gives each code a pseudorandom score *F*(*c*).
-**Gumbel selection** picks the code maximizing log *F*(*c*) / *n*<sub>*c*</sub>,
-where *n*<sub>*c*</sub> is its number of candidates, then returns a uniformly random
-candidate from that region. Averaged over keys and sampler randomness, each
-candidate is returned with probability 1/*N*. The guarantee is over keys; the paper
-measures a single fixed key empirically.
-
-**Detection.** The image is turned into a code with the same encoder and
-hyperplanes, and the code is scored with the same key. If the embedding is close
-to a hyperplane, the **boundary-aware detector** also checks nearby codes and uses
-the highest score. For a batch of *B* images from one source, the scores are
-averaged before comparing with a threshold calibrated for that batch size.
-
-**The encoder.** It must distinguish independent generations from the same
-prompt while keeping each image close to its edited versions; standard semantic
-encoders may map those generations close together. We train a DINOv2 encoder
-with LoRA to balance separation and stability. The variation among generations
-that remains distinguishable after editing is the *semantic entropy* that
-selection needs to leave a detectable signal.
-
-</details>
-
 ## Quick start
 
 ```bash
@@ -93,7 +66,9 @@ conda activate semantic-watermark
 python scripts/download_checkpoint.py --output-dir checkpoints
 ```
 
-The last command downloads the trained encoder and checks its SHA-256.
+The last command downloads the trained encoder and checks its SHA-256. The encoder
+is DINOv2 fine-tuned with LoRA to tell apart different generations for the same
+prompt while staying stable under edits.
 Generating and embedding images needs a CUDA GPU. Tree-Ring, Gaussian Shading
 and SEAL run in their own environments (`experiments/baselines`).
 
