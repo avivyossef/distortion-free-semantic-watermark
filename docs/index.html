@@ -30,7 +30,8 @@
       <p class="authors">Aviv Yossef · Or Patashnik · Or Zamir</p>
       <p class="affiliation">Tel Aviv University</p>
       <div class="hero-links">
-        <a class="link-button primary" href="https://github.com/avivyossef/distortion-free-semantic-watermark">Code on GitHub</a>
+        <a class="link-button primary" href="https://arxiv.org/abs/2611.23208">Paper (arXiv)</a>
+        <a class="link-button" href="https://github.com/avivyossef/distortion-free-semantic-watermark">Code on GitHub</a>
         <a class="link-button" href="https://huggingface.co/avivyossef/semantic-entropy-encoder">Encoder weights</a>
       </div>
       <p class="tldr"><strong>TL;DR</strong> A distortion-free, sampling-based watermarking method for generative models that requires only black-box access to any generator and any semantic encoder.</p>
@@ -157,17 +158,31 @@
     <section class="section wrap" id="about" aria-labelledby="about-title">
       <h2 id="about-title">About the method</h2>
       <div class="properties">
-        <div>
-          <h3>Black-box</h3>
-          <p>The method only requests samples and encodes them, so it works with a closed generation API. To our knowledge it is the first distortion-free semantic watermark that treats both the generator and the encoder as black boxes.</p>
+        <div class="prop">
+          <h3 style="color:#8b4fd6">Semantic robustness</h3>
+          <div class="prop-ill" aria-hidden="true">
+            <figure><img src="assets/dog.jpg" alt="" width="96" height="96"><figcaption>original</figcaption></figure>
+            <span class="prop-op">→</span>
+            <figure><span class="prop-crop"><img src="assets/dog.jpg" alt="" width="96" height="96"></span><figcaption>cropped</figcaption></figure>
+          </div>
+          <p>Cropping, resizing, and compression change pixels but not what an image depicts. The encoder is trained to describe an image and its edited versions alike, so edited images stay in the same semantic region and keep the watermark.</p>
         </div>
-        <div>
-          <h3>Distortion-free</h3>
+        <div class="prop">
+          <h3 style="color:#3b6fd8">Distortion-free</h3>
+          <div class="prop-ill" aria-hidden="true">
+            <figure><svg viewBox="0 0 128 100" aria-hidden="true"><path d="M8 86 H120" stroke="#8093ad" stroke-width="2"/><path d="M13 85 C30 85 37 73 47 54 C57 31 62 25 69 25 C83 25 84 51 94 66 C102 79 111 85 117 85 Z" fill="#d7e5fb" stroke="#3b6fd8" stroke-width="3"/></svg><figcaption>generator</figcaption></figure>
+            <span class="prop-op">=</span>
+            <figure><svg viewBox="0 0 128 100" aria-hidden="true"><path d="M8 86 H120" stroke="#8093ad" stroke-width="2"/><path d="M13 85 C30 85 37 73 47 54 C57 31 62 25 69 25 C83 25 84 51 94 66 C102 79 111 85 117 85 Z" fill="#d7e5fb" stroke="#3b6fd8" stroke-width="3"/></svg><figcaption>with watermark</figcaption></figure>
+          </div>
           <p>For any prompt, averaging over random secret keys gives exactly the same distribution of images as sampling the generator directly.</p>
         </div>
-        <div>
-          <h3>Survives edits</h3>
-          <p>Cropping, resizing, and compression change pixels but not what an image depicts. The encoder is trained to describe an image and its edited versions alike, so edited images stay in the same semantic region and keep the watermark.</p>
+        <div class="prop">
+          <h3 style="color:#e0951f">Black-box</h3>
+          <div class="prop-ill" aria-hidden="true">
+            <figure><span class="prop-box" style="background:linear-gradient(140deg,#5b7cfa 0%,#8b4fd6 55%,#d65aa8 100%)"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2l2.2 6.3L20.5 10.5l-6.3 2.2L12 19l-2.2-6.3L3.5 10.5l6.3-2.2z" fill="#fff"/><path d="M19 15l.9 2.1L22 18l-2.1.9L19 21l-.9-2.1L16 18l2.1-.9z" fill="#fff" opacity=".85"/></svg></span><figcaption>generator</figcaption></figure>
+            <figure><span class="prop-box" style="background:linear-gradient(140deg,#19b3a6 0%,#1f8fd1 100%)"><svg viewBox="0 0 48 48" aria-hidden="true"><g stroke="rgba(255,255,255,.55)" stroke-width="1.6"><path d="M8 12L24 8M8 12L24 20M8 12L24 32M8 24L24 8M8 24L24 20M8 24L24 32M8 36L24 20M8 36L24 32M8 36L24 40M8 24L24 40"/><path d="M24 8L40 18M24 20L40 18M24 32L40 18M24 20L40 30M24 32L40 30M24 40L40 30"/></g><g fill="#fff"><circle cx="8" cy="12" r="3.4"/><circle cx="8" cy="24" r="3.4"/><circle cx="8" cy="36" r="3.4"/><circle cx="24" cy="8" r="3.4"/><circle cx="24" cy="20" r="3.4"/><circle cx="24" cy="32" r="3.4"/><circle cx="24" cy="40" r="3.4"/><circle cx="40" cy="18" r="4"/><circle cx="40" cy="30" r="4"/></g></svg></span><figcaption>encoder</figcaption></figure>
+          </div>
+          <p>The method only requests samples and encodes them, so it works with a closed generation API. To our knowledge it is the first distortion-free semantic watermark that treats both the generator and the encoder as black boxes.</p>
         </div>
       </div>
     </section>
@@ -178,10 +193,13 @@
         <button class="link-button" id="copy-citation" type="button">Copy BibTeX</button>
       </div>
       <pre><code id="citation-text">@misc{yossef2026distortionfree,
-  title  = {Distortion-Free Semantic Watermarks for Black-Box Generative Models},
-  author = {Yossef, Aviv and Patashnik, Or and Zamir, Or},
-  year   = {2026},
-  note   = {Preprint}
+  title         = {Distortion-Free Semantic Watermarks for Black-Box Generative Models},
+  author        = {Yossef, Aviv and Patashnik, Or and Zamir, Or},
+  year          = {2026},
+  eprint        = {2611.23208},
+  archivePrefix = {arXiv},
+  primaryClass  = {cs.LG},
+  url           = {https://arxiv.org/abs/2611.23208}
 }</code></pre>
     </section>
   </main>
