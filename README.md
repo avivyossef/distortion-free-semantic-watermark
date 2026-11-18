@@ -9,11 +9,14 @@ Tel Aviv University
 
 <br>
 
-> **TL;DR** — A distortion-free, sampling-based watermark for generative models.<br>
+> **TL;DR**<br>
+> A distortion-free, sampling-based watermark for generative models.<br>
 > It needs only black-box access to the generator and to a semantic encoder,<br>
 > so it works with closed image-generation APIs.
 
 </div>
+
+<br>
 
 ## How it works
 
@@ -21,8 +24,8 @@ Tel Aviv University
 
 <table>
   <tr>
-    <th width="50%">Generate a watermarked image</th>
-    <th width="50%">Check images for the watermark</th>
+    <th align="center" width="50%">Generate a watermarked image</th>
+    <th align="center" width="50%">Check images for the watermark</th>
   </tr>
   <tr>
     <td valign="top">
@@ -44,9 +47,6 @@ Tel Aviv University
 </table>
 
 ## What you get
-
-The watermark lives in which of the model's own outputs is released, not in
-its pixels, so you get three properties at once:
 
 <table>
   <tr>
