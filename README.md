@@ -5,13 +5,18 @@
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-<p><b>TL;DR</b> A distortion-free, sampling-based watermark for generative models.<br>
-It needs only black-box access to the generator and to a semantic encoder,<br>
-so it works with closed image-generation APIs.</p>
+<table>
+  <tr>
+    <td align="center">
+      <b>TL;DR</b><br><br>
+      A distortion-free, sampling-based watermark for generative models.<br>
+      It needs only black-box access to the generator and to a semantic encoder,<br>
+      so it works with closed image-generation APIs.
+    </td>
+  </tr>
+</table>
 
-<a href="https://arxiv.org/abs/2611.23208"><img src="https://img.shields.io/badge/arXiv-2611.23208-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper on arXiv"></a>
-<a href="https://avivyossef.github.io/distortion-free-semantic-watermark/"><img src="https://img.shields.io/badge/Project%20page-Interactive%20demo-3B6FD8?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
-<a href="https://huggingface.co/avivyossef/semantic-entropy-encoder"><img src="https://img.shields.io/badge/Hugging%20Face-Encoder%20weights-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" alt="Encoder weights on Hugging Face"></a>
+[Paper (arXiv)](https://arxiv.org/abs/2611.23208) · [Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/) · [Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)
 
 <img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
 
