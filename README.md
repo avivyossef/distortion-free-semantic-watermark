@@ -5,18 +5,19 @@
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-[![arXiv](https://img.shields.io/badge/arXiv-2611.23208-b31b1b.svg?style=flat-square)](https://arxiv.org/abs/2611.23208)
-[![Project page](https://img.shields.io/badge/Project-page-3b6fd8.svg?style=flat-square)](https://avivyossef.github.io/distortion-free-semantic-watermark/)
-[![Encoder weights](https://img.shields.io/badge/%F0%9F%A4%97%20Hugging%20Face-encoder-ffcc4d.svg?style=flat-square)](https://huggingface.co/avivyossef/semantic-entropy-encoder)
-[![License](https://img.shields.io/badge/license-Apache--2.0-8a94a3.svg?style=flat-square)](LICENSE)
+<p><b>TL;DR</b> A distortion-free, sampling-based watermark for generative models.<br>
+It needs only black-box access to the generator and to a semantic encoder,<br>
+so it works with closed image-generation APIs.</p>
+
+<a href="https://arxiv.org/abs/2611.23208"><img src="https://img.shields.io/badge/arXiv-2611.23208-B31B1B?style=for-the-badge&logo=arxiv&logoColor=white" alt="Paper on arXiv"></a>
+<a href="https://avivyossef.github.io/distortion-free-semantic-watermark/"><img src="https://img.shields.io/badge/Project%20page-Interactive%20demo-3B6FD8?style=for-the-badge&logo=googlechrome&logoColor=white" alt="Project page"></a>
+<a href="https://huggingface.co/avivyossef/semantic-entropy-encoder"><img src="https://img.shields.io/badge/Hugging%20Face-Encoder%20weights-FFD21E?style=for-the-badge&logo=huggingface&logoColor=black" alt="Encoder weights on Hugging Face"></a>
 
 <img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
 
 ***The watermark is in the choice, not in the pixels.***
 
 </div>
-
-> **TL;DR** A distortion-free, sampling-based watermark for generative models. It needs only black-box access to the generator and to a semantic encoder, so it works with closed image-generation APIs.
 
 <table>
   <tr>
