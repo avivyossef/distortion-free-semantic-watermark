@@ -5,30 +5,35 @@
 **Aviv Yossef · Or Patashnik · Or Zamir**<br>
 Tel Aviv University
 
-<table><tr><td>
-<b>TL;DR</b> — A distortion-free, sampling-based watermark for generative models. It needs only black-box access to the generator and to a semantic encoder, so it works with closed image-generation APIs. <i>The watermark is in the choice, not in the pixels.</i>
-</td></tr></table>
-
 **[Paper (arXiv)](https://arxiv.org/abs/2611.23208)** &nbsp;·&nbsp; **[Project page](https://avivyossef.github.io/distortion-free-semantic-watermark/)** &nbsp;·&nbsp; **[Encoder weights](https://huggingface.co/avivyossef/semantic-entropy-encoder)** &nbsp;·&nbsp; **[BibTeX](#citation)**
-
-<img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
 
 </div>
 
-<table>
-  <tr>
-    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-robustness.svg" width="220" alt=""><br><b>Semantic robustness</b><br><sub>Cropping, resizing and compression change pixels, not what an image depicts, so an edited image keeps the watermark.</sub></td>
-    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-distortion-free.svg" width="220" alt=""><br><b>Distortion-free</b><br><sub>Averaged over secret keys, a watermarked output has exactly the generator's own distribution.</sub></td>
-    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-black-box.svg" width="220" alt=""><br><b>Black-box</b><br><sub>It only requests samples and embeds them, never the weights or internals of the generator or the encoder.</sub></td>
-  </tr>
-</table>
+> **TL;DR** — A distortion-free, sampling-based watermark for generative models.
+> It needs only black-box access to the generator and to a semantic encoder,
+> so it works with closed image-generation APIs.
+
+## The idea
+
+A generator gives many different images for the same prompt. Instead of hiding
+a signal in the pixels, we hide it in **which** of these images is released:
+we sample several candidates, and a secret key decides which one to return.
+Whoever holds the key can later check whether an image's content matches the
+key's preference.
+
+<p align="center"><b><i>The watermark is in the choice, not in the pixels.</i></b></p>
 
 ## How it works
 
+The animation shows both halves: making a watermarked image (top) and checking
+images for the watermark (bottom).
+
+<img src="docs/assets/method.svg" alt="Sample several images, map them to semantic regions, sample a region with the secret key and release one image unchanged; then check images by scoring their region against a threshold" width="100%">
+
 <table>
   <tr>
-    <th width="50%">Generation</th>
-    <th width="50%">Detection</th>
+    <th width="50%">Generate a watermarked image</th>
+    <th width="50%">Check images for the watermark</th>
   </tr>
   <tr>
     <td valign="top">
@@ -46,6 +51,19 @@ Tel Aviv University
 3. **Compare** with a threshold calibrated on unwatermarked images. Watermarked images are much more likely to score high.
 
 </td>
+  </tr>
+</table>
+
+## Why it works
+
+Because the watermark lives in the choice among the model's own outputs, the
+method gets three properties at once:
+
+<table>
+  <tr>
+    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-robustness.svg" width="220" alt=""><br><b>Semantic robustness</b><br><sub>Cropping, resizing and compression change pixels, not what an image depicts, so an edited image stays in its region and keeps the watermark.</sub></td>
+    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-distortion-free.svg" width="220" alt=""><br><b>Distortion-free</b><br><sub>Every released image is an unchanged model output, and averaged over secret keys the output distribution is exactly the generator's own.</sub></td>
+    <td align="center" valign="top" width="33%"><img src="docs/assets/icon-black-box.svg" width="220" alt=""><br><b>Black-box</b><br><sub>It only requests samples and embeds them, so it never needs the weights or internals of the generator or the encoder.</sub></td>
   </tr>
 </table>
 
